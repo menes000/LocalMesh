@@ -145,7 +145,5 @@ The exact request and response contract is documented in
   running session, and what they post reaches agents' context. Agents still
   refuse requests inside a question to change files, run commands or reveal
   secrets without their user's approval.
-- Traffic is plain HTTP: someone sniffing the network can read the secret. Use
-  it on trusted networks only.
 - To revoke a leaked token, run `npm run new-token` in `server/`, restart the
   server, then share the new token.
