@@ -5,16 +5,18 @@ import { fileURLToPath } from 'node:url';
 export type Agent = { id: string; name: string; lastSeen: string; [key: string]: unknown };
 export type Note = { id: number; from: string; content: string; createdAt: string; [key: string]: unknown };
 export type Question = { id: number; from: string; to?: string; question: string; createdAt: string; answer?: string; answeredAt?: string; answeredBy?: string; [key: string]: unknown };
-export type State = { agents: Agent[]; notes: Note[]; questions: Question[]; nextId: number };
+export type Message = { id: number; from: string; to: string; content: string; createdAt: string };
+export type State = { agents: Agent[]; notes: Note[]; questions: Question[]; messages: Message[]; nextId: number };
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const statePath = path.resolve(here, '../state.json');
-const emptyState = (): State => ({ agents: [], notes: [], questions: [], nextId: 1 });
+const emptyState = (): State => ({ agents: [], notes: [], questions: [], messages: [], nextId: 1 });
 
 function validState(value: unknown): value is State {
   if (!value || typeof value !== 'object') return false;
   const s = value as Partial<State>;
   return Array.isArray(s.agents) && Array.isArray(s.notes) && Array.isArray(s.questions) &&
+    (s.messages === undefined || Array.isArray(s.messages)) &&
     Number.isSafeInteger(s.nextId) && (s.nextId as number) > 0;
 }
 
@@ -22,7 +24,9 @@ async function load(): Promise<State> {
   try {
     const parsed: unknown = JSON.parse(await readFile(statePath, 'utf8'));
     if (!validState(parsed)) throw new Error('state file has an invalid shape');
-    return parsed;
+    // Older state files predate messages. Preserve their contents and migrate
+    // them in memory; the next successful mutation persists the new field.
+    return { ...parsed, messages: parsed.messages ?? [] };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return emptyState();
     const corruptPath = `${statePath}.corrupt-${Date.now()}`;

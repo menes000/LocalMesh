@@ -46,6 +46,55 @@ router.post('/notes', async (req, res) => {
   res.status(201).json(note);
 });
 
+router.post('/messages', async (req, res) => {
+  const body = req.body ?? {};
+  const { from, to, content } = body;
+  if (!str(from) || !str(to) || !str(content)) {
+    return bad(res, 'from, to, and content must be non-empty strings');
+  }
+  if (Buffer.byteLength(content, 'utf8') > 64 * 1024) {
+    return res.status(413).json({ error: 'content must be at most 64 KiB' });
+  }
+
+  const created = await mutate(() => {
+    const message = {
+      id: allocateId(),
+      from: from.trim(),
+      to: to.trim(),
+      content,
+      createdAt: now(),
+    };
+    state.messages.push(message);
+    return message;
+  });
+  res.status(201).json(created);
+});
+
+router.get('/messages', (req, res) => {
+  const agent = typeof req.query.agent === 'string' ? req.query.agent.trim() : '';
+  if (!agent) return bad(res, 'agent is required');
+
+  const parseInteger = (value: unknown, fallback: number): number | undefined => {
+    if (value === undefined) return fallback;
+    if (typeof value !== 'string' || !/^\d+$/.test(value)) return undefined;
+    const number = Number(value);
+    return Number.isSafeInteger(number) ? number : undefined;
+  };
+  const since = parseInteger(req.query.since, 0);
+  if (since === undefined) return bad(res, 'since must be a non-negative safe integer');
+
+  const limit = parseInteger(req.query.limit, 100);
+  if (limit === undefined || limit < 1 || limit > 500) {
+    return bad(res, 'limit must be an integer between 1 and 500');
+  }
+
+  const messages = state.messages
+    .filter(message => message.to === agent && message.id > since)
+    .sort((a, b) => a.id - b.id)
+    .slice(0, limit);
+  res.json({ messages, nextSince: messages.at(-1)?.id ?? since });
+});
+
 router.get('/questions', (req, res) => {
   const since = Number(req.query.since);
   const agent = typeof req.query.agent === 'string' ? req.query.agent : undefined;
