@@ -6,8 +6,8 @@ import type { RequestHandler } from 'express';
 
 const secretPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../.localmesh-secret');
 
-// LOCALMESH_SECRET wins; otherwise use the secret scripts/rotate-secret.mjs wrote
-// for this server run (tsx watch restarts keep it), or create one if missing.
+// LOCALMESH_SECRET wins; otherwise reuse the saved secret, or create one on
+// first start, so join tokens stay valid across restarts (npm run new-token rotates it).
 async function loadSecret(): Promise<string> {
   const fromEnv = process.env.LOCALMESH_SECRET?.trim();
   if (fromEnv) return fromEnv;

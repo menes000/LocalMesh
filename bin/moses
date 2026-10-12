@@ -33,8 +33,8 @@ entry="$repo/mcp/src/index.ts"
 case "$1" in -h|--help) usage 0 ;; esac
 tool="$1"; shift
 
-# The server runs from the repo regardless of the current directory; npm run dev
-# makes a new secret, so it prints a new join token on every start.
+# The server runs from the repo regardless of the current directory and prints
+# the join token on start (fixed until npm run new-token).
 if [ "$tool" = server ]; then
   [ -d "$repo/server/node_modules" ] || { echo "moses: run 'npm install' in $repo/server first" >&2; exit 1; }
   cd "$repo/server"

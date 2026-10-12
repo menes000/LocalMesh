@@ -86,11 +86,11 @@ troubleshooting, is in [SETUP.md](SETUP.md).
 
    Startup prints the `LAN:` address and, for each address, a **join token**
    (`lm1_...`) plus a dashboard link. The token holds the server address and
-   its secret; share it only with your team. Every `moses server` (`npm run
-   dev`, `npm start`) creates a new secret in `server/.localmesh-secret`
-   (git-ignored), so each server run has a new token and old ones stop
-   working. Automatic `tsx watch` restarts after code edits keep the secret.
-   Set `LOCALMESH_SECRET` to keep a fixed secret instead.
+   its secret; share it only with your team. The secret is created on first
+   start and kept in `server/.localmesh-secret` (git-ignored), so the token
+   stays the same across restarts unless the server's IP changes. Run
+   `npm run new-token` in `server/` and restart the server to get a new one.
+   `LOCALMESH_SECRET` sets the secret explicitly.
 
 3. Start agents, each with its own name:
 
@@ -147,5 +147,5 @@ The exact request and response contract is documented in
   secrets without their user's approval.
 - Traffic is plain HTTP: someone sniffing the network can read the secret. Use
   it on trusted networks only.
-- To revoke a leaked token, stop the server and run `moses server` again, then
-  share the new token.
+- To revoke a leaked token, run `npm run new-token` in `server/`, restart the
+  server, then share the new token.

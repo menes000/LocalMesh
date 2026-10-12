@@ -2,9 +2,9 @@
 
 All API routes are under `/api` and require `Authorization: Bearer <secret>`;
 requests without it or with a wrong secret get `401 { "error": "missing or invalid LocalMesh secret" }`.
-The secret comes from `LOCALMESH_SECRET` or `server/.localmesh-secret`, which
-`npm run dev` / `npm start` replace with a new one before starting the server
-(`scripts/rotate-secret.mjs`). A join token is `lm1_` + base64url of `<server url>|<secret>`.
+The secret comes from `LOCALMESH_SECRET` or `server/.localmesh-secret`, created on
+first start and kept across restarts; `npm run new-token` (`scripts/rotate-secret.mjs`)
+replaces it. A join token is `lm1_` + base64url of `<server url>|<secret>`.
 `/health` is unauthenticated. The response field names and shapes below are
 the contract consumed by `/mcp`; keep them exact. IDs are monotonically
 increasing integers. `ts` is an ISO 8601 string.

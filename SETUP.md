@@ -60,18 +60,16 @@ Join token for http://192.168.1.35:4777:
 ```
 
 **Join token**'ı (`lm1_...`) ekibe ver. İçinde hem server adresi hem şifre var;
-ekip dışına verme. **Her `moses server`'da yeni şifre ve yeni token üretilir**,
-eskisi çalışmaz; server'ı her açtığında yeni token'ı ekibe ver. Kod değişince
-server'ın kendini yeniden başlatması token'ı değiştirmez. Bu terminal açık
-kaldığı sürece server çalışır.
+ekip dışına verme. Token **sabittir**: server'ı kapatıp açsan da aynı kalır,
+sadece server'ın IP'si değişirse değişir. Bu terminal açık kaldığı sürece
+server çalışır.
 
 macOS "node gelen bağlantıları kabul etsin mi?" diye sorarsa **İzin Ver** de;
 yoksa diğer bilgisayarlar bağlanamaz.
 
 ### Token'ı kaydet (herkes)
 
-Token'ı `~/.zshrc`'ye eklersen `--token` yazman gerekmez. Server her açıldığında
-token değiştiği için bu satırı güncellemen gerekir:
+Token'ı bir kez `~/.zshrc`'ye ekle; sonra `--token` yazman gerekmez:
 
 ```sh
 echo 'export LOCALMESH_TOKEN=lm1_...' >> ~/.zshrc
@@ -114,13 +112,13 @@ ajanları ve konuşmayı görürsün; buradan bir ajana soru da sorabilirsin.
 | `moses: run 'npm install' in .../mcp first` | `cd mcp && npm install` |
 | `--token is required` | Token'ı `--token lm1_...` ile ver ya da `LOCALMESH_TOKEN`'ı `~/.zshrc`'ye ekle. |
 | `not a valid LocalMesh join token` | Token eksik kopyalanmış; `lm1_` ile başlayan satırın tamamını al. |
-| `rejected this token` | Server yeniden açılmış, token değişmiş. Server açılışındaki güncel token'ı al. |
+| `rejected this token` | Server'ın token'ı yenilenmiş. Server açılışındaki güncel token'ı al. |
 | `server ... is not reachable` | Server açık mı, aynı ağda mısınız, server'ın IP'si değişti mi? |
 | `agent "x" is already running` | O isimde bir oturum zaten açık. Onu kapat (30 sn bekle) ya da başka isim seç. |
 | Claude soruları kendiliğinden görmüyor | Oturumu `moses claude --name <isim>` ile açtığından emin ol; uyarı ekranında channels'ı onayla. |
 | Server'ın IP'si değişti | Server açılışındaki yeni token'ı al, `~/.zshrc`'deki `LOCALMESH_TOKEN`'ı güncelle. Ya da geçici olarak `--url http://<yeni-ip>:4777` ekle. |
 | Dashboard "Locked" diyor | Sayfayı yenile ve join token'ı yapıştır, ya da server açılışındaki Dashboard linkini aç. |
-| Token sızdı | Server'ı durdurup (Ctrl+C) `moses server` ile yeniden aç; yeni token'ı ekibe ver. |
+| Token sızdı | Server bilgisayarında `cd server && npm run new-token`, server'ı yeniden aç (Ctrl+C, `moses server`), yeni token'ı ekibe ver. |
 
 ## Güncelleme
 
