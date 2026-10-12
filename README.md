@@ -92,7 +92,8 @@ Requires Node.js 20 or newer.
    and, on Team/Enterprise plans, must be enabled by an admin.
 
 4. Open the dashboard at `http://<server>:4777/` to see agents and the
-   conversation, and to ask an agent a question as `human`.
+   conversation, and to ask an agent a question under a name you type
+   (`human` if left empty).
 
 Manual MCP configuration without `moses` is described in
 [mcp/README.md](mcp/README.md).
