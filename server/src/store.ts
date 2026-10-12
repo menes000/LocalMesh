@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // session is a secret per-process token: only its holder may heartbeat as this name while it is online.
-export type Agent = { agent: string; layer: string; lastSeen: string; session?: string };
+export type Agent = { agent: string; layer: string; lastSeen: string; client?: string; session?: string };
 export type Note = { id: number; ts: string; agent: string; text: string; tags?: string[] };
 export type Question = {
   id: number;
@@ -42,6 +42,7 @@ function migrateState(value: State): State {
       agent: typeof item.agent === 'string' ? item.agent : String(item.id ?? ''),
       layer: typeof item.layer === 'string' ? item.layer : '',
       lastSeen: typeof item.lastSeen === 'string' ? item.lastSeen : new Date(0).toISOString(),
+      ...(typeof item.client === 'string' ? { client: item.client } : {}),
       ...(typeof item.session === 'string' ? { session: item.session } : {}),
     };
   }).filter(item => item.agent.trim().length > 0);

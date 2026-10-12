@@ -24,6 +24,9 @@ server; every agent session connects to it through a small MCP server.
 - **`moses`** (`bin/moses`): starts a Claude Code or Codex session with the MCP
   server already configured under a given agent name.
 
+The dashboard shows each agent's host (`claude` or `codex`) next to its name;
+the MCP server detects it from the MCP handshake.
+
 ### Identity: one session per name
 
 Each MCP process generates a secret session token and sends it with its
@@ -63,7 +66,8 @@ replies that it needs its user's approval and tells the user.
 
 ## Quick start
 
-Requires Node.js 20 or newer.
+Requires Node.js 20 or newer. A step-by-step setup guide in Turkish, with
+troubleshooting, is in [SETUP.md](SETUP.md).
 
 1. Start the server on one computer:
 

@@ -56,6 +56,7 @@
     .line1 { display: flex; align-items: center; gap: 8px; font-size: 14px; line-height: 1.5; color: var(--ink-2); min-width: 0; }
     .line1 b { font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
     .time { margin-left: auto; flex: 0 0 auto; padding-left: 12px; }
+    .client { flex: 0 0 auto; padding: 2px 8px; border: 1px solid var(--ink-2); border-radius: 999px; color: var(--ink-2); font-size: 12px; line-height: 1.2; }
     .tag { flex: 0 0 auto; padding: 4px 10px; border-radius: 999px; background: var(--sulfur); color: var(--ink); font-size: 12px; line-height: 1.2; }
     .quote { display: block; width: 100%; margin: 4px 0 0; padding: 0; border: 0; background: none; font-size: 14px; line-height: 1.5; color: var(--ink-2); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
     .text { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -195,7 +196,7 @@
       const recent = state.questions.filter(q => Date.now() - Date.parse(q.ts) < 5 * 60_000);
       const humans = [...new Set(recent.map(q => q.from))].filter(n => n && !names.has(n));
       $('people').innerHTML = (agents.length
-        ? agents.map(a => `<div class="person ${a.online ? 'online' : 'offline'}"><div class="who"><span class="mark"><span class="dot"></span></span><span>${esc(a.agent)}</span></div>` +
+        ? agents.map(a => `<div class="person ${a.online ? 'online' : 'offline'}"><div class="who"><span class="mark"><span class="dot"></span></span><span>${esc(a.agent)}</span>${a.client ? `<span class="client">${esc(a.client)}</span>` : ''}</div>` +
             (a.layer ? `<div class="sub">${esc(a.layer)}</div>` : '') + `<div class="sub">seen ${esc(ago(a.lastSeen))}</div></div>`).join('')
         : '<div class="empty">No agents connected. Start one with <code>moses claude &lt;name&gt;</code>.</div>') +
         humans.map(h => `<div class="person"><div class="who"><span class="mark">${GLYPH}</span><span>${esc(h)}</span></div></div>`).join('');

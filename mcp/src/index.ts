@@ -290,9 +290,22 @@ async function pushActivity() {
 let nameConflict: string | undefined;
 let firstHeartbeat: Promise<void> | undefined;
 
+// Which host runs this agent, from the MCP handshake (LOCALMESH_CLIENT overrides).
+// Undefined until the host has connected.
+function hostClient(): string | undefined {
+  const name = process.env.LOCALMESH_CLIENT?.trim() || server.server.getClientVersion()?.name;
+  if (!name) return undefined;
+  if (/claude/i.test(name)) return 'claude';
+  if (/codex/i.test(name)) return 'codex';
+  return name;
+}
+
 async function sendHeartbeat() {
   try {
-    const response = await request('POST', '/api/agents/heartbeat', { agent, layer, session });
+    const client = hostClient();
+    const response = await request('POST', '/api/agents/heartbeat', {
+      agent, layer, session, ...(client === undefined ? {} : { client }),
+    });
     nameConflict = undefined;
     return response;
   } catch (error) {
@@ -334,6 +347,11 @@ async function main() {
   transport.onclose = () => {
     clearInterval(heartbeatTimer);
     clearInterval(pushTimer);
+  };
+  // Report the host (claude/codex) as soon as the handshake names it.
+  // Sent directly: the startup heartbeat may still be in flight, and heartbeat() would skip.
+  server.server.oninitialized = () => {
+    void sendHeartbeat().catch(error => console.error(`Heartbeat failed: ${String(error)}`));
   };
   await server.connect(transport);
   pushTimer = setInterval(() => {

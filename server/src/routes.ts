@@ -28,6 +28,7 @@ const agentList = () => state.agents.map(agent => ({
   layer: agent.layer,
   lastSeen: agent.lastSeen,
   online: isOnline(agent.lastSeen),
+  ...(agent.client === undefined ? {} : { client: agent.client }),
 }));
 
 const noteList = () => state.notes.map(note => ({
@@ -53,16 +54,24 @@ router.get('/agents', (_req, res) => res.json(agentList()));
 
 router.post('/agents/heartbeat', async (req, res) => {
   try {
-    const { agent, layer = '', session } = req.body ?? {};
-    if (!str(agent) || typeof layer !== 'string' || (session !== undefined && !str(session))) {
-      return bad(res, 'agent must be a non-empty string, layer a string, and session a non-empty string when provided');
+    const { agent, layer = '', session, client } = req.body ?? {};
+    if (!str(agent) || typeof layer !== 'string' || (session !== undefined && !str(session)) ||
+      (client !== undefined && !str(client))) {
+      return bad(res, 'agent must be a non-empty string, layer a string, and session/client non-empty strings when provided');
     }
     // One running session per name: while the current holder is online, a
     // heartbeat from any other session (or a legacy client without one) is refused.
     const result = await mutate(() => {
       const current = state.agents.find(item => item.agent === agent.trim());
       if (current && isOnline(current.lastSeen) && current.session !== session) return 'taken' as const;
-      const value = { agent: agent.trim(), layer, lastSeen: now(), ...(session === undefined ? {} : { session }) };
+      const value = {
+        agent: agent.trim(),
+        layer,
+        lastSeen: now(),
+        // Keep a known client when a heartbeat arrives before the MCP handshake told us.
+        ...(client === undefined ? {} : { client: client.trim() }),
+        ...(session === undefined ? {} : { session }),
+      };
       if (current) Object.assign(current, value, session === undefined ? { session: undefined } : {});
       else state.agents.push(value);
       return 'ok' as const;

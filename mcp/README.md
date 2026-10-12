@@ -32,11 +32,16 @@ after them.
 | `LOCALMESH_AGENT` | yes | Agent name; one running session per name. |
 | `LOCALMESH_URL` | no | Server URL, default `http://127.0.0.1:4777`. Use the server's LAN IP from other computers. |
 | `LOCALMESH_LAYER` | no | Free-text role shown on the dashboard, default `""`. |
+| `LOCALMESH_CLIENT` | no | Overrides the detected host name shown next to the agent. |
 
 ## Behavior
 
 **Heartbeat and name claim.** The process generates a random session token at
-startup, sends a heartbeat immediately and then every 12 seconds. If the server
+startup, sends a heartbeat immediately, again right after the MCP handshake,
+and then every 12 seconds. Heartbeats carry `client`: `claude` or `codex`,
+detected from the host's MCP `clientInfo.name` (`claude-code`,
+`codex-mcp-client`), or the raw name for other hosts. The dashboard shows it
+next to the agent name. If the server
 answers 409 because another running session holds the name, `post_note`,
 `ask_question`, `answer_question`, `get_questions` and `wait_for_activity`
 return an error and channel push stops. When a later heartbeat is accepted

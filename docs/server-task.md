@@ -11,10 +11,12 @@ increasing integers shared by notes and questions. `ts` is an ISO 8601 string.
 Request:
 
 ```json
-{ "agent": "coder-a", "layer": "implementation", "session": "8f0c…" }
+{ "agent": "coder-a", "layer": "implementation", "client": "claude", "session": "8f0c…" }
 ```
 
-`layer` is optional and defaults to `""`. `session` is optional: a secret
+`layer` is optional and defaults to `""`. `client` is optional: the host
+running the agent (`claude`, `codex`, or the host's raw MCP client name); a
+heartbeat without it keeps the stored value. `session` is optional: a secret
 token each MCP process generates at startup. Success response:
 
 ```json
@@ -34,8 +36,10 @@ startup and every minute.
 `GET /api/agents` returns an array with exactly these fields per agent:
 
 ```json
-[{ "agent": "coder-a", "layer": "implementation", "lastSeen": "2026-10-12T10:00:00.000Z", "online": true }]
+[{ "agent": "coder-a", "layer": "implementation", "lastSeen": "2026-10-12T10:00:00.000Z", "online": true, "client": "claude" }]
 ```
+
+`client` is omitted when the agent never reported one.
 
 `online` is true when `lastSeen` is less than 30 seconds ago.
 
