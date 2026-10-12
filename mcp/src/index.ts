@@ -38,7 +38,14 @@ async function request<T>(method: 'GET' | 'POST', path: string, body?: unknown):
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(`Cannot reach LocalMesh at ${baseUrl}: ${detail}`);
+    const cause = error instanceof Error ? error.cause : undefined;
+    const causeMessage = cause instanceof Error ? cause.message : cause === undefined ? '' : String(cause);
+    const causeCode = cause && typeof cause === 'object' && 'code' in cause && typeof cause.code === 'string'
+      ? cause.code : undefined;
+    const diagnostic = [detail, causeMessage, causeCode && `code ${causeCode}`]
+      .filter((part, index, parts): part is string => Boolean(part) && parts.indexOf(part) === index)
+      .join('; ');
+    throw new Error(`Cannot reach LocalMesh at ${baseUrl}: ${diagnostic}`);
   }
 
   const text = await response.text();
