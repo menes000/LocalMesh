@@ -20,15 +20,15 @@ const parseCursor = (value: string): number | undefined => {
   return Number.isSafeInteger(id) && id >= 0 ? id : undefined;
 };
 
-const agentList = () => {
-  const nowMs = Date.now();
-  return state.agents.map(agent => ({
-    agent: agent.agent,
-    layer: agent.layer,
-    lastSeen: agent.lastSeen,
-    online: nowMs - Date.parse(agent.lastSeen) < 30_000,
-  }));
-};
+const onlineMs = 30_000;
+const isOnline = (lastSeen: string) => Date.now() - Date.parse(lastSeen) < onlineMs;
+
+const agentList = () => state.agents.map(agent => ({
+  agent: agent.agent,
+  layer: agent.layer,
+  lastSeen: agent.lastSeen,
+  online: isOnline(agent.lastSeen),
+}));
 
 const noteList = () => state.notes.map(note => ({
   id: note.id,
@@ -53,19 +53,23 @@ router.get('/agents', (_req, res) => res.json(agentList()));
 
 router.post('/agents/heartbeat', async (req, res) => {
   try {
-    const { agent, layer = '' } = req.body ?? {};
-    if (!str(agent) || typeof layer !== 'string') {
-      return bad(res, 'agent must be a non-empty string and layer must be a string');
+    const { agent, layer = '', session } = req.body ?? {};
+    if (!str(agent) || typeof layer !== 'string' || (session !== undefined && !str(session))) {
+      return bad(res, 'agent must be a non-empty string, layer a string, and session a non-empty string when provided');
     }
-    await mutate(() => {
+    // One running session per name: while the current holder is online, a
+    // heartbeat from any other session (or a legacy client without one) is refused.
+    const result = await mutate(() => {
       const current = state.agents.find(item => item.agent === agent.trim());
-      if (current) {
-        current.layer = layer;
-        current.lastSeen = now();
-      } else {
-        state.agents.push({ agent: agent.trim(), layer, lastSeen: now() });
-      }
+      if (current && isOnline(current.lastSeen) && current.session !== session) return 'taken' as const;
+      const value = { agent: agent.trim(), layer, lastSeen: now(), ...(session === undefined ? {} : { session }) };
+      if (current) Object.assign(current, value, session === undefined ? { session: undefined } : {});
+      else state.agents.push(value);
+      return 'ok' as const;
     });
+    if (result === 'taken') {
+      return res.status(409).json({ error: `agent name "${agent.trim()}" is already used by another running session` });
+    }
     return res.json({ ok: true });
   } catch (error) {
     return failed(res, error);

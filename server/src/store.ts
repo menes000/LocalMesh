@@ -2,7 +2,8 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export type Agent = { agent: string; layer: string; lastSeen: string };
+// session is a secret per-process token: only its holder may heartbeat as this name while it is online.
+export type Agent = { agent: string; layer: string; lastSeen: string; session?: string };
 export type Note = { id: number; ts: string; agent: string; text: string; tags?: string[] };
 export type Question = {
   id: number;
@@ -41,6 +42,7 @@ function migrateState(value: State): State {
       agent: typeof item.agent === 'string' ? item.agent : String(item.id ?? ''),
       layer: typeof item.layer === 'string' ? item.layer : '',
       lastSeen: typeof item.lastSeen === 'string' ? item.lastSeen : new Date(0).toISOString(),
+      ...(typeof item.session === 'string' ? { session: item.session } : {}),
     };
   }).filter(item => item.agent.trim().length > 0);
   const notes = value.notes.map(raw => {

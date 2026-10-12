@@ -47,6 +47,17 @@ if [[ ! "$agent" =~ ^[A-Za-z0-9._-]+$ ]]; then
 fi
 [ -x "$tsx" ] || { echo "moses: run 'npm install' in $repo/mcp first" >&2; exit 1; }
 
+# Refuse early when the name is already online. The server enforces this too;
+# checking here avoids opening a session that cannot act as this agent.
+if agents="$(curl -fsS --max-time 3 "$url/api/agents" 2>/dev/null)"; then
+  if printf '%s' "$agents" | grep -q "\"agent\":\"${agent//./\\.}\",[^}]*\"online\":true"; then
+    echo "moses: agent \"$agent\" is already running. Close that session or pick another name." >&2
+    exit 1
+  fi
+else
+  echo "moses: warning: LocalMesh server at $url is not reachable; starting anyway" >&2
+fi
+
 # Escape for JSON and TOML basic strings, which share these rules.
 quote() { local s="${1//\\/\\\\}"; s="${s//\"/\\\"}"; printf '"%s"' "$s"; }
 
