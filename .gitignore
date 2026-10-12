@@ -2,3 +2,4 @@ node_modules/
 server/state.json*
 server/repos/
 .DS_Store
+server/.localmesh-secret

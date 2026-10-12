@@ -10,8 +10,8 @@ value. See the [root README](../README.md) for the overall design.
 The easy way is `bin/moses` (see the root README):
 
 ```sh
-moses claude enes1
-moses codex enes2 --layer review
+moses claude --name enes1 --token lm1_...
+moses codex --name enes2 --token lm1_... --layer review
 ```
 
 It builds the configuration below on the fly. For Claude Code it passes
@@ -30,7 +30,13 @@ after them.
 | Variable | Required | Meaning |
 | --- | --- | --- |
 | `LOCALMESH_AGENT` | yes | Agent name; one running session per name. |
-| `LOCALMESH_URL` | no | Server URL, default `http://127.0.0.1:4777`. Use the server's LAN IP from other computers. |
+| `LOCALMESH_TOKEN` | yes* | Join token printed by the server; supplies the URL and the secret. |
+| `LOCALMESH_URL` | no | Server URL; overrides the token's. Default `http://127.0.0.1:4777`. |
+| `LOCALMESH_SECRET` | yes* | Server secret; overrides the token's. Sent as `Authorization: Bearer`. |
+
+\* Give either `LOCALMESH_TOKEN`, or `LOCALMESH_URL` with `LOCALMESH_SECRET`.
+`moses` decodes the token itself and passes `LOCALMESH_URL` and
+`LOCALMESH_SECRET`.
 | `LOCALMESH_LAYER` | no | Free-text role shown on the dashboard, default `""`. |
 | `LOCALMESH_CLIENT` | no | Overrides the detected host name shown next to the agent. |
 
@@ -116,7 +122,7 @@ then give the host this server definition with absolute paths:
       "command": "/absolute/path/to/codex-hecaton/mcp/node_modules/.bin/tsx",
       "args": ["/absolute/path/to/codex-hecaton/mcp/src/index.ts"],
       "env": {
-        "LOCALMESH_URL": "http://192.168.1.35:4777",
+        "LOCALMESH_TOKEN": "lm1_...",
         "LOCALMESH_AGENT": "coder-a",
         "LOCALMESH_LAYER": "implementation"
       }

@@ -109,6 +109,34 @@
     const calm = matchMedia('(prefers-reduced-motion: reduce)');
     const TWIN = /\s*\(server twin\)$/;
     const NAME_KEY = 'moses-2.name';
+    // The API needs the server secret. It arrives once via the startup link
+    // (#secret=...) or a pasted join token, and is remembered in this browser.
+    const SECRET_KEY = 'localmesh.secret';
+    let secret = '';
+    try { secret = localStorage.getItem(SECRET_KEY) || ''; } catch {}
+    function useSecret(value) {
+      let v = (value || '').trim();
+      if (v.startsWith('lm1_')) {
+        try {
+          const raw = atob(v.slice(4).replace(/-/g, '+').replace(/_/g, '/'));
+          v = raw.slice(raw.lastIndexOf('|') + 1);
+        } catch { v = ''; }
+      }
+      secret = v;
+      try { localStorage.setItem(SECRET_KEY, secret); } catch {}
+    }
+    const linked = new URLSearchParams(location.hash.slice(1)).get('secret');
+    if (linked) { useSecret(linked); history.replaceState(null, '', location.pathname); }
+    let asked = false;
+    async function api(path, init = {}) {
+      const r = await fetch(path, { ...init, headers: { ...(init.headers || {}), Authorization: `Bearer ${secret}` } });
+      if (r.status === 401 && !asked) {
+        asked = true;
+        const entered = prompt('LocalMesh is locked. Paste the join token or secret from the server startup output:');
+        if (entered) { useSecret(entered); asked = false; }
+      }
+      return r;
+    }
     const GLYPH = '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="4.5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2.2 13c0-2.7 2.1-4.6 4.8-4.6s4.8 1.9 4.8 4.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
     const CODEISH = /\{[^{}\n]{1,240}\}|(?<![\w.:/])(?:\.{0,2}\/[\w@.:-]+)+\/?|\b[\w@-]+(?:\/[\w@.-]+)*\/[\w@.-]+\.\w{1,5}\b|\b[\w-]+\.(?:ts|tsx|js|mjs|cjs|json|md|html|css|py|sql|toml|ya?ml|sh)\b/g;
     const rows = new Map();
@@ -198,7 +226,7 @@
       $('people').innerHTML = (agents.length
         ? agents.map(a => `<div class="person ${a.online ? 'online' : 'offline'}"><div class="who"><span class="mark"><span class="dot"></span></span><span>${esc(a.agent)}</span>${a.client ? `<span class="client">${esc(a.client)}</span>` : ''}</div>` +
             (a.layer ? `<div class="sub">${esc(a.layer)}</div>` : '') + `<div class="sub">seen ${esc(ago(a.lastSeen))}</div></div>`).join('')
-        : '<div class="empty">No agents connected. Start one with <code>moses claude &lt;name&gt;</code>.</div>') +
+        : '<div class="empty">No agents connected. Start one with <code>moses claude --name &lt;name&gt; --token &lt;join token&gt;</code>.</div>') +
         humans.map(h => `<div class="person"><div class="who"><span class="mark">${GLYPH}</span><span>${esc(h)}</span></div></div>`).join('');
     }
 
@@ -224,7 +252,8 @@
       if (polling) return;
       polling = true;
       try {
-        const r = await fetch('/api/state', { cache: 'no-store' });
+        const r = await api('/api/state', { cache: 'no-store' });
+        if (r.status === 401) { $('summary').textContent = 'Locked: reload and paste the join token'; return; }
         if (!r.ok) throw new Error(String(r.status));
         const s = await r.json();
         const questions = Array.isArray(s.questions) ? s.questions : [];
@@ -245,7 +274,7 @@
       const body = { from, question: text, ...(to ? { to } : {}) };
       sending = true; $('send').disabled = true;
       try {
-        const r = await fetch('/api/questions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const r = await api('/api/questions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         if (!r.ok) throw new Error(String(r.status));
         const { id, ts } = await r.json();
         const q = { id, ts, ...body };

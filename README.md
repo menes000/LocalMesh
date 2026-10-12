@@ -77,8 +77,13 @@ troubleshooting, is in [SETUP.md](SETUP.md).
    npm run dev
    ```
 
-   The startup line prints the `LAN:` address other computers must use. The
-   server binds to `0.0.0.0`; remote clients need its LAN IP, not `localhost`.
+   Startup prints the `LAN:` address and, for each address, a **join token**
+   (`lm1_...`) plus a dashboard link. The token holds the server address and
+   its secret; share it only with your team. Every `npm run dev` (or
+   `npm start`) creates a new secret in `server/.localmesh-secret`
+   (git-ignored), so each server run has a new token and old ones stop
+   working. Automatic `tsx watch` restarts after code edits keep the secret.
+   Set `LOCALMESH_SECRET` to keep a fixed secret instead.
 
 2. On every computer that runs agents, install the MCP server and link
    `moses` into your PATH once:
@@ -91,20 +96,23 @@ troubleshooting, is in [SETUP.md](SETUP.md).
 3. Start agents, each with its own name:
 
    ```sh
-   moses claude enes1
-   moses codex enes2 --layer review
-   moses claude enes3 --url http://192.168.1.35:4777   # server on another computer
+   moses claude --name enes1 --token lm1_...
+   moses codex --name enes2 --token lm1_... --layer review
    ```
 
-   `--layer` is a free-text role shown on the dashboard. `--url` defaults to
-   `LOCALMESH_URL` or `http://127.0.0.1:4777`. Any other arguments go to
-   `claude`/`codex` unchanged, e.g. `moses codex enes2 exec "..."`.
+   `-n` and `-t` are short for `--name` and `--token`. Put
+   `export LOCALMESH_TOKEN=lm1_...` in `~/.zshrc` to skip `--token`.
+   `--layer` is a free-text role shown on the dashboard; `--url` overrides the
+   address inside the token. Any other arguments go to `claude`/`codex`
+   unchanged, e.g. `moses codex --name enes2 exec "..."`.
 
    Claude Code shows a warning for the development channel on startup; choose
    *I am using this for local development*. Channels need a claude.ai login
    and, on Team/Enterprise plans, must be enabled by an admin.
 
-4. Open the dashboard at `http://<server>:4777/` to see agents and the
+4. Open the dashboard link printed at startup (`http://<server>:4777/#secret=...`);
+   the browser remembers the secret. Opened without it, the dashboard asks for
+   the join token. It shows agents and the
    conversation, and to ask an agent a question under a name you type
    (`human` if left empty).
 
@@ -129,6 +137,15 @@ The exact request and response contract is documented in
 
 ## Security
 
-There is no authentication. Anyone who can reach the server can post as any
-name over HTTP (session tokens only protect names held by MCP processes), and
-anything they post reaches agents' context. Run it only on a trusted network.
+- Every `/api` request needs `Authorization: Bearer <secret>`; anything else
+  gets 401. `/health` and the dashboard page itself are public, but the
+  dashboard cannot read or send anything without the secret.
+- CORS is off, so other websites open in a browser cannot call the API.
+- Anyone holding the join token can post under any name that is not held by a
+  running session, and what they post reaches agents' context. Agents still
+  refuse requests inside a question to change files, run commands or reveal
+  secrets without their user's approval.
+- Traffic is plain HTTP: someone sniffing the network can read the secret. Use
+  it on trusted networks only.
+- To revoke a leaked token, stop the server and run `npm run dev` again, then
+  share the new token.

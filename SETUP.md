@@ -48,29 +48,34 @@ cd server
 npm run dev
 ```
 
-Açılışta şuna benzer bir satır çıkar:
+Açılışta şuna benzer satırlar çıkar:
 
 ```
 LocalMesh server listening: http://localhost:4777 | LAN: http://192.168.1.35:4777
+
+Join token for http://192.168.1.35:4777:
+  lm1_aHR0cDovLzE5Mi4xNjguMS4zNTo0Nzc3fC4uLg
+  Start an agent: moses claude --name <name> --token lm1_...
+  Dashboard:      http://192.168.1.35:4777/#secret=...
 ```
 
-`LAN:` adresini diğerlerine ver. Bu terminal açık kaldığı sürece server çalışır.
+**Join token**'ı (`lm1_...`) ekibe ver. İçinde hem server adresi hem şifre var;
+ekip dışına verme. **Her `npm run dev`'de yeni şifre ve yeni token üretilir**,
+eskisi çalışmaz; server'ı her açtığında yeni token'ı ekibe ver. Kod değişince
+server'ın kendini yeniden başlatması token'ı değiştirmez. Bu terminal açık
+kaldığı sürece server çalışır.
+
 macOS "node gelen bağlantıları kabul etsin mi?" diye sorarsa **İzin Ver** de;
 yoksa diğer bilgisayarlar bağlanamaz.
 
-### Server başka bilgisayardaysa
+### Token'ı kaydet (herkes)
 
-Server'ın `LAN:` adresini bir kez kaydet (IP'yi kendi server adresinle değiştir):
+Token'ı `~/.zshrc`'ye eklersen `--token` yazman gerekmez. Server her açıldığında
+token değiştiği için bu satırı güncellemen gerekir:
 
 ```sh
-echo 'export LOCALMESH_URL=http://192.168.1.35:4777' >> ~/.zshrc
+echo 'export LOCALMESH_TOKEN=lm1_...' >> ~/.zshrc
 source ~/.zshrc
-```
-
-Bağlantıyı kontrol et; `{"ok":true}` dönmeli:
-
-```sh
-curl "$LOCALMESH_URL/health"
 ```
 
 ## 4. Ajanı başlat
@@ -78,9 +83,11 @@ curl "$LOCALMESH_URL/health"
 Her ajanın ağda **benzersiz** bir adı olmalı:
 
 ```sh
-moses claude enes1                    # Claude Code ajanı
-moses codex enes2                     # Codex ajanı
-moses claude enes3 --layer review     # dashboard'da görünen rol etiketiyle
+moses claude --name enes1                    # Claude Code ajanı
+moses codex --name enes2                     # Codex ajanı
+moses claude --name enes3 --layer review     # dashboard'da görünen rol etiketiyle
+moses claude --name enes4 --token lm1_...    # token'ı .zshrc'ye kaydetmediysen
+moses claude -n enes5 -t lm1_...             # kısa hali: -n = --name, -t = --token
 ```
 
 - Claude açılışta "development channels" uyarısı gösterir; **I am using this
@@ -93,9 +100,10 @@ moses claude enes3 --layer review     # dashboard'da görünen rol etiketiyle
 
 ## 5. Dashboard
 
-Tarayıcıda server adresini aç: `http://<server-ip>:4777/`. Server'ı sen
-açtıysan `http://localhost:4777/`. Online ajanları ve konuşmayı görürsün;
-buradan bir ajana soru da sorabilirsin.
+Server açılışında yazan **Dashboard** linkini aç (`http://<server-ip>:4777/#secret=...`).
+Tarayıcı şifreyi hatırlar, sonra sadece `http://<server-ip>:4777/` yeter. Linksiz
+açarsan dashboard join token'ı sorar; `lm1_...` token'ı yapıştır. Online
+ajanları ve konuşmayı görürsün; buradan bir ajana soru da sorabilirsin.
 
 ## Sorun çıkarsa
 
@@ -103,10 +111,15 @@ buradan bir ajana soru da sorabilirsin.
 | --- | --- |
 | `moses: command not found` | 2. adımdaki PATH satırını ekleyip `source ~/.zshrc` çalıştır. |
 | `moses: run 'npm install' in .../mcp first` | `cd mcp && npm install` |
-| `server ... is not reachable` | `LOCALMESH_URL` doğru mu, server açık mı, aynı ağda mısınız? `curl "$LOCALMESH_URL/health"` ile dene. |
+| `--token is required` | Token'ı `--token lm1_...` ile ver ya da `LOCALMESH_TOKEN`'ı `~/.zshrc`'ye ekle. |
+| `not a valid LocalMesh join token` | Token eksik kopyalanmış; `lm1_` ile başlayan satırın tamamını al. |
+| `rejected this token` | Server yeniden açılmış, token değişmiş. Server açılışındaki güncel token'ı al. |
+| `server ... is not reachable` | Server açık mı, aynı ağda mısınız, server'ın IP'si değişti mi? |
 | `agent "x" is already running` | O isimde bir oturum zaten açık. Onu kapat (30 sn bekle) ya da başka isim seç. |
-| Claude soruları kendiliğinden görmüyor | Oturumu `moses claude <isim>` ile açtığından emin ol; uyarı ekranında channels'ı onayla. |
-| Server'ın IP'si değişti | Yeni `LAN:` adresiyle `~/.zshrc`'deki `LOCALMESH_URL` satırını güncelle. |
+| Claude soruları kendiliğinden görmüyor | Oturumu `moses claude --name <isim>` ile açtığından emin ol; uyarı ekranında channels'ı onayla. |
+| Server'ın IP'si değişti | Server açılışındaki yeni token'ı al, `~/.zshrc`'deki `LOCALMESH_TOKEN`'ı güncelle. Ya da geçici olarak `--url http://<yeni-ip>:4777` ekle. |
+| Dashboard "Locked" diyor | Sayfayı yenile ve join token'ı yapıştır, ya da server açılışındaki Dashboard linkini aç. |
+| Token sızdı | Server'ı durdurup `npm run dev` ile yeniden aç; yeni token'ı ekibe ver. |
 
 ## Güncelleme
 

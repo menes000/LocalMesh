@@ -5,8 +5,8 @@
   "type": "module",
   "engines": { "node": ">=20" },
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
+    "dev": "node scripts/rotate-secret.mjs && tsx watch src/index.ts",
+    "start": "node scripts/rotate-secret.mjs && tsx src/index.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": { "cors": "^2.8.5", "express": "^4.21.2" },

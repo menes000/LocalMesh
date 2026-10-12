@@ -11,7 +11,20 @@ if (!agent) {
 
 // The heartbeat tool may change the layer; periodic heartbeats keep the latest value.
 let layer = process.env.LOCALMESH_LAYER ?? '';
-const baseUrl = (process.env.LOCALMESH_URL || 'http://127.0.0.1:4777').replace(/\/+$/, '');
+// A join token ("lm1_" + base64url("<url>|<secret>"), printed by the server)
+// supplies both values; LOCALMESH_URL / LOCALMESH_SECRET override its parts.
+function parseJoinToken(token: string) {
+  const raw = token.startsWith('lm1_') ? Buffer.from(token.slice(4), 'base64url').toString('utf8') : '';
+  const split = raw.lastIndexOf('|');
+  if (split <= 0) {
+    console.error('LOCALMESH_TOKEN is not a valid LocalMesh join token.');
+    process.exit(1);
+  }
+  return { url: raw.slice(0, split), secret: raw.slice(split + 1) };
+}
+const joined = process.env.LOCALMESH_TOKEN?.trim() ? parseJoinToken(process.env.LOCALMESH_TOKEN.trim()) : undefined;
+const baseUrl = (process.env.LOCALMESH_URL || joined?.url || 'http://127.0.0.1:4777').replace(/\/+$/, '');
+const secret = process.env.LOCALMESH_SECRET?.trim() || joined?.secret;
 const pollIntervalMs = 1_000;
 const heartbeatIntervalMs = 12_000;
 // Secret token for this process. The server lets only one running session use
@@ -32,7 +45,10 @@ async function request<T>(method: 'GET' | 'POST', path: string, body?: unknown):
   try {
     response = await fetch(`${baseUrl}${path}`, {
       method,
-      headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+      headers: {
+        ...(secret ? { authorization: `Bearer ${secret}` } : {}),
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(10_000),
     });

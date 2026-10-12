@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # Start a Claude Code or Codex session connected to LocalMesh.
 #
-#   moses claude <agent-name> [--layer <layer>] [--url <server-url>] [extra args...]
-#   moses codex  <agent-name> [--layer <layer>] [--url <server-url>] [extra args...]
+#   moses claude -n <agent-name> -t <join-token> [--layer <layer>] [--url <server-url>] [extra args...]
+#   moses codex  -n <agent-name> -t <join-token> [--layer <layer>] [--url <server-url>] [extra args...]
 #
-# Extra args are passed to claude/codex unchanged (for example an opening prompt).
-# LOCALMESH_URL and LOCALMESH_LAYER are used when --url/--layer are not given.
+# -n/--name and -t/--token are the same; they replace claude's own -n/--name.
+#
+# The join token (printed by the server at startup) holds the server address and
+# its secret. Set LOCALMESH_TOKEN once instead of passing --token every time.
+# --url overrides the address in the token. Extra args go to claude/codex unchanged.
 set -euo pipefail
 
 usage() {
-  sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' >&2
+  sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//' >&2
   exit "${1:-1}"
 }
 
@@ -27,36 +30,68 @@ entry="$repo/mcp/src/index.ts"
 [ $# -ge 1 ] || usage
 case "$1" in -h|--help) usage 0 ;; esac
 tool="$1"; shift
-[ $# -ge 1 ] || { echo "moses: agent name is required, e.g. moses $tool enes1" >&2; exit 1; }
-agent="$1"; shift
 
+agent=""
+token="${LOCALMESH_TOKEN:-}"
 layer="${LOCALMESH_LAYER:-}"
-url="${LOCALMESH_URL:-http://127.0.0.1:4777}"
+url=""
 passthrough=()
 while [ $# -gt 0 ]; do
   case "$1" in
+    -n|--name) agent="${2:?--name needs a value}"; shift 2 ;;
+    -t|--token) token="${2:?--token needs a value}"; shift 2 ;;
     --layer) layer="${2:?--layer needs a value}"; shift 2 ;;
     --url) url="${2:?--url needs a value}"; shift 2 ;;
     *) passthrough+=("$1"); shift ;;
   esac
 done
 
+[ -n "$agent" ] || { echo "moses: --name is required, e.g. moses $tool --name enes1 --token lm1_..." >&2; exit 1; }
 if [[ ! "$agent" =~ ^[A-Za-z0-9._-]+$ ]]; then
   echo "moses: agent name may only contain letters, digits, '.', '_' and '-'" >&2
   exit 1
 fi
+[ -n "$token" ] || {
+  echo "moses: --token is required (or set LOCALMESH_TOKEN). The server prints it at startup." >&2
+  exit 1
+}
+
+# Token format: "lm1_" + base64url("<server url>|<secret>").
+decoded=""
+if [[ "$token" == lm1_* ]]; then
+  b64="${token#lm1_}"; b64="${b64//-/+}"; b64="${b64//_//}"
+  case $(( ${#b64} % 4 )) in 2) b64="$b64==" ;; 3) b64="$b64=" ;; esac
+  decoded="$(printf '%s' "$b64" | base64 --decode 2>/dev/null || true)"
+fi
+if [[ "$decoded" != *"|"* ]]; then
+  echo "moses: that is not a valid LocalMesh join token (it should start with lm1_)" >&2
+  exit 1
+fi
+secret="${decoded##*|}"
+url="${url:-${decoded%|*}}"
+
 [ -x "$tsx" ] || { echo "moses: run 'npm install' in $repo/mcp first" >&2; exit 1; }
 
-# Refuse early when the name is already online. The server enforces this too;
-# checking here avoids opening a session that cannot act as this agent.
-if agents="$(curl -fsS --max-time 3 "$url/api/agents" 2>/dev/null)"; then
-  if printf '%s' "$agents" | grep -q "\"agent\":\"${agent//./\\.}\",[^}]*\"online\":true"; then
-    echo "moses: agent \"$agent\" is already running. Close that session or pick another name." >&2
+# Check the token and refuse early when the name is already online. The server
+# enforces both; checking here avoids opening a session that cannot work.
+response="$(curl -sS --max-time 3 -H "Authorization: Bearer $secret" -w $'\n%{http_code}' "$url/api/agents" 2>/dev/null || true)"
+status="${response##*$'\n'}"
+agents="${response%$'\n'*}"
+case "$status" in
+  200)
+    if printf '%s' "$agents" | grep -q "\"agent\":\"${agent//./\\.}\",[^}]*\"online\":true"; then
+      echo "moses: agent \"$agent\" is already running. Close that session or pick another name." >&2
+      exit 1
+    fi
+    ;;
+  401)
+    echo "moses: the server at $url rejected this token. Get the current one from the server's startup output." >&2
     exit 1
-  fi
-else
-  echo "moses: warning: LocalMesh server at $url is not reachable; starting anyway" >&2
-fi
+    ;;
+  *)
+    echo "moses: warning: LocalMesh server at $url is not reachable; starting anyway" >&2
+    ;;
+esac
 
 # Escape for JSON and TOML basic strings, which share these rules.
 quote() { local s="${1//\\/\\\\}"; s="${s//\"/\\\"}"; printf '"%s"' "$s"; }
@@ -72,7 +107,7 @@ case "$tool" in
   claude)
     command -v claude >/dev/null || { echo "moses: claude is not installed" >&2; exit 1; }
     config="{\"mcpServers\":{\"localmesh\":{\"command\":$(quote "$tsx"),\"args\":[$(quote "$entry")],\
-\"env\":{\"LOCALMESH_URL\":$(quote "$url"),\"LOCALMESH_AGENT\":$(quote "$agent"),\"LOCALMESH_LAYER\":$(quote "$layer")}}}}"
+\"env\":{\"LOCALMESH_URL\":$(quote "$url"),\"LOCALMESH_SECRET\":$(quote "$secret"),\"LOCALMESH_AGENT\":$(quote "$agent"),\"LOCALMESH_LAYER\":$(quote "$layer")}}}}"
     exec claude --mcp-config "$config" --strict-mcp-config \
       --allowedTools mcp__localmesh \
       --append-system-prompt "$autoreply" \
@@ -84,7 +119,7 @@ case "$tool" in
     config=(
       -c "mcp_servers.localmesh.command=$(quote "$tsx")"
       -c "mcp_servers.localmesh.args=[$(quote "$entry")]"
-      -c "mcp_servers.localmesh.env={LOCALMESH_URL=$(quote "$url"),LOCALMESH_AGENT=$(quote "$agent"),LOCALMESH_LAYER=$(quote "$layer")}"
+      -c "mcp_servers.localmesh.env={LOCALMESH_URL=$(quote "$url"),LOCALMESH_SECRET=$(quote "$secret"),LOCALMESH_AGENT=$(quote "$agent"),LOCALMESH_LAYER=$(quote "$layer")}"
       -c 'mcp_servers.localmesh.default_tools_approval_mode="approve"'
     )
     # Codex ignores -c given before the exec/resume subcommands, so put the
