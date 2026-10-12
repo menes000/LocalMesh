@@ -123,3 +123,15 @@ export async function persist(): Promise<void> {
 }
 
 export function allocateId(): number { return state.nextId++; }
+
+/** Remove agents whose last heartbeat is older than maxAgeMs; returns how many were removed. */
+export async function pruneStaleAgents(maxAgeMs: number): Promise<number> {
+  const cutoff = Date.now() - maxAgeMs;
+  const isStale = (agent: Agent) => !(Date.parse(agent.lastSeen) >= cutoff);
+  if (!state.agents.some(isStale)) return 0;
+  return mutate(() => {
+    const before = state.agents.length;
+    state.agents = state.agents.filter(agent => !isStale(agent));
+    return before - state.agents.length;
+  });
+}

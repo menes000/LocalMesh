@@ -5,9 +5,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ErrorRequestHandler } from 'express';
 import { router } from './routes.js';
+import { pruneStaleAgents } from './store.js';
 
 const app = express();
 const port = Number(process.env.PORT) || 4777;
+// Agents that have not sent a heartbeat for an hour are dropped from state.json.
+const agentMaxAgeMs = 60 * 60_000;
+const pruneIntervalMs = 5 * 60_000;
 const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public');
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
@@ -28,6 +32,16 @@ const jsonErrors: ErrorRequestHandler = (error: unknown, _req, res, _next) => {
   return res.status(500).json({ error: 'internal server error' });
 };
 app.use(jsonErrors);
+async function pruneAgents() {
+  try {
+    const removed = await pruneStaleAgents(agentMaxAgeMs);
+    if (removed) console.log(`Removed ${removed} agent(s) not seen for over an hour`);
+  } catch (error) {
+    console.error('Agent cleanup failed:', error);
+  }
+}
+void pruneAgents();
+setInterval(pruneAgents, pruneIntervalMs).unref();
 app.listen(port, '0.0.0.0', () => {
   const lan = Object.values(os.networkInterfaces()).flatMap(items => items ?? [])
     .filter(item => item.family === 'IPv4' && !item.internal).map(item => `http://${item.address}:${port}`);

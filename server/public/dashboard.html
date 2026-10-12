@@ -26,17 +26,16 @@
     html, body { height: 100%; margin: 0; overflow: hidden; }
     body { background: var(--canvas); }
     button, input, select { font: inherit; color: var(--ink); }
-    .app { display: grid; grid-template-rows: 64px 1fr 64px; grid-template-columns: 280px 1fr 340px; gap: 16px; padding: 24px; height: 100vh; box-sizing: border-box; }
-    header { min-width: 0; grid-column: 1 / 4; grid-row: 1; display: flex; align-items: center; justify-content: space-between; }
+    .app { display: grid; grid-template-rows: 64px 1fr 64px; grid-template-columns: 280px 1fr; gap: 16px; padding: 24px; height: 100vh; box-sizing: border-box; }
+    header { min-width: 0; grid-column: 1 / 3; grid-row: 1; display: flex; align-items: center; justify-content: space-between; }
     h1 { margin: 0; font-family: "Bebas Neue", system-ui, sans-serif; font-size: 40px; line-height: 1; font-weight: 500; }
     .summary { color: var(--ink-2); font-size: 17px; }
     .columns { display: contents; }
     .panel { height: 100%; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--surface); border-radius: 24px; padding: 24px; }
     .agents-panel { grid-column: 1; grid-row: 2; }
     .conversation-panel { grid-column: 2; grid-row: 2; }
-    .notes-panel { grid-column: 3; grid-row: 2; }
     h2 { flex: 0 0 auto; margin: 0 0 24px; font-size: 20px; font-weight: 500; }
-    .agent-list, .transcript, .notes-list { flex: 1; min-height: 0; overflow-y: auto; align-content: start; }
+    .agent-list, .transcript { flex: 1; min-height: 0; overflow-y: auto; align-content: start; }
     .agent-list { display: grid; gap: 24px; }
     .agent { min-width: 0; }
     .agent.offline { opacity: .45; }
@@ -65,10 +64,6 @@
     .answer-text pre { white-space: pre-wrap; margin: 10px 0; }
     .answer-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 12px; color: var(--ink-2); font-size: 14px; }
     .twin-tag { padding: 4px 10px; border-radius: 999px; background: var(--sulfur); color: var(--ink); font-size: 12px; }
-    .notes-list { display: flex; flex-direction: column; gap: 32px; }
-    .note-agent { font-size: 18px; margin-bottom: 5px; overflow-wrap: anywhere; }
-    .note-text { font-size: 17px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
-    .note-time { margin-top: 4px; color: var(--ink-2); font-size: 14px; }
     .empty { color: var(--ink-2); font-size: 17px; line-height: 1.5; }
     footer { min-width: 0; grid-column: 2; grid-row: 3; display: grid; grid-template-columns: minmax(150px, 220px) minmax(0, 1fr) auto; align-items: center; gap: 10px; }
     .pill { height: 48px; min-width: 0; border: 1.5px solid var(--ink); border-radius: 999px; background: transparent; padding: 0 17px; outline: none; }
@@ -90,7 +85,6 @@
     <main class="columns">
       <section class="panel agents-panel"><h2>Agents</h2><div class="agent-list" id="agents"><div class="empty">No agents connected. Start one with <code>moses respond</code>.</div></div></section>
       <section class="panel conversation-panel"><h2>Conversation</h2><div class="transcript" id="conversation"><div class="empty">No questions yet. Ask one below, or let an agent ask.</div></div></section>
-      <section class="panel notes-panel"><h2>Notes</h2><div class="notes-list" id="notes"><div class="empty">Nothing shared yet.</div></div></section>
     </main>
     <footer>
       <select class="pill" id="target" aria-label="Choose an agent"><option value="">Choose agent</option></select>
@@ -107,14 +101,16 @@
     const questionNodes = new Map();
     let previousQuestionIds = new Set();
     let polling = false;
+    // Agents silent for longer than this are hidden; they reappear on their next heartbeat.
+    const agentVisibleMs = 10 * 60_000;
     function renderAgents(items) {
-      const agents = items || [];
+      const agents = (items || []).filter(a => Date.now() - new Date(a.lastSeen).getTime() < agentVisibleMs);
       $('agents').innerHTML = agents.length ? agents.map(a => `<article class="agent ${a.online ? 'online' : 'offline'}"><div class="agent-heading"><span class="indicator"></span><span class="agent-name">${esc(a.agent)}</span></div><div class="layer">${esc(a.layer || 'No layer set')}</div><div class="seen">${esc(seen(a.lastSeen))}</div></article>`).join('') : '<div class="empty">No agents connected. Start one with <code>moses respond</code>.</div>';
       const old = $('target').value;
       $('target').innerHTML = '<option value="">Choose agent</option>' + agents.map(a => `<option value="${esc(a.agent)}">${esc(a.agent)}</option>`).join('');
       if (agents.some(a => a.agent === old)) $('target').value = old;
       $('ask-button').disabled = agents.length === 0;
-      $('summary').textContent = `${agents.filter(a => a.online).length} agents online, ${($('summary').dataset.questions || 0)} questions, ${($('summary').dataset.notes || 0)} notes`;
+      $('summary').textContent = `${agents.filter(a => a.online).length} agents online, ${($('summary').dataset.questions || 0)} questions`;
     }
     function richAnswer(text) {
       return esc(text).replace(/```([\s\S]*?)```/g, '<pre>$1</pre>').replace(/`([^`]+)`/g, '<code>$1</code>');
@@ -166,16 +162,12 @@
       if (added || answeredNew || !previousQuestionIds.size) $('conversation').scrollTop = $('conversation').scrollHeight;
       previousQuestionIds = ids;
     }
-    function renderNotes(items) {
-      const notes = [...(items || [])].sort((a, b) => Number(b.id) - Number(a.id));
-      $('notes').innerHTML = notes.length ? notes.map(n => `<article><div class="note-agent">${esc(n.agent)}</div><div class="note-text">${esc(n.text)}</div><div class="note-time">${esc(when(n.ts))}</div></article>`).join('') : '<div class="empty">Nothing shared yet.</div>';
-    }
     async function refresh() {
       if (polling) return; polling = true;
       try {
         const r = await fetch('/api/state', { cache: 'no-store' }); if (!r.ok) throw new Error(`${r.status}`);
-        const s = await r.json(); $('summary').dataset.questions = s.questions.length; $('summary').dataset.notes = s.notes.length;
-        renderAgents(s.agents); renderQuestions(s.questions); renderNotes(s.notes);
+        const s = await r.json(); $('summary').dataset.questions = s.questions.length;
+        renderAgents(s.agents); renderQuestions(s.questions);
       } catch { $('summary').textContent = 'Server unavailable, retrying'; }
       finally { polling = false; }
     }
