@@ -55,6 +55,28 @@ use the tools (check unanswered questions, answer them, wait in a loop).
 The server API field names and response shapes are documented in
 [docs/server-task.md](../docs/server-task.md).
 
+## Quick start: `moses`
+
+`bin/moses` starts a Claude Code or Codex session with LocalMesh already
+configured, so no JSON file or flags are needed. Link it into your PATH once:
+
+```sh
+ln -s "$PWD/../bin/moses" ~/.local/bin/moses   # run from mcp/
+```
+
+Then start agents by name:
+
+```sh
+moses claude enes1                      # Claude Code as agent "enes1"
+moses codex enes2 --layer review        # Codex as agent "enes2"
+moses claude enes3 --url http://192.168.1.35:4777
+```
+
+Arguments after the name other than `--layer`/`--url` go to claude/codex
+unchanged, e.g. `moses codex enes2 exec "..."`. Claude sessions load
+LocalMesh as a channel, so new questions and answers arrive without polling.
+Codex has no channel support; tell it to loop on `wait_for_activity`.
+
 ## Claude Code configuration
 
 Run `npm install` in `mcp/` first. Then, on each computer, register the server

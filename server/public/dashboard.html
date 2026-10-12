@@ -83,7 +83,7 @@
   <div class="app">
     <header><h1>PeerSync</h1><div class="summary" id="summary">Connecting</div></header>
     <main class="columns">
-      <section class="panel agents-panel"><h2>Agents</h2><div class="agent-list" id="agents"><div class="empty">No agents connected. Start one with <code>moses respond</code>.</div></div></section>
+      <section class="panel agents-panel"><h2>Agents</h2><div class="agent-list" id="agents"><div class="empty">No agents connected. Start one with <code>moses claude &lt;name&gt;</code>.</div></div></section>
       <section class="panel conversation-panel"><h2>Conversation</h2><div class="transcript" id="conversation"><div class="empty">No questions yet. Ask one below, or let an agent ask.</div></div></section>
     </main>
     <footer>
@@ -105,7 +105,7 @@
     const agentVisibleMs = 10 * 60_000;
     function renderAgents(items) {
       const agents = (items || []).filter(a => Date.now() - new Date(a.lastSeen).getTime() < agentVisibleMs);
-      $('agents').innerHTML = agents.length ? agents.map(a => `<article class="agent ${a.online ? 'online' : 'offline'}"><div class="agent-heading"><span class="indicator"></span><span class="agent-name">${esc(a.agent)}</span></div><div class="layer">${esc(a.layer || 'No layer set')}</div><div class="seen">${esc(seen(a.lastSeen))}</div></article>`).join('') : '<div class="empty">No agents connected. Start one with <code>moses respond</code>.</div>';
+      $('agents').innerHTML = agents.length ? agents.map(a => `<article class="agent ${a.online ? 'online' : 'offline'}"><div class="agent-heading"><span class="indicator"></span><span class="agent-name">${esc(a.agent)}</span></div><div class="layer">${esc(a.layer || 'No layer set')}</div><div class="seen">${esc(seen(a.lastSeen))}</div></article>`).join('') : '<div class="empty">No agents connected. Start one with <code>moses claude &lt;name&gt;</code>.</div>';
       const old = $('target').value;
       $('target').innerHTML = '<option value="">Choose agent</option>' + agents.map(a => `<option value="${esc(a.agent)}">${esc(a.agent)}</option>`).join('');
       if (agents.some(a => a.agent === old)) $('target').value = old;

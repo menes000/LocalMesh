@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# Start a Claude Code or Codex session connected to LocalMesh.
+#
+#   moses claude <agent-name> [--layer <layer>] [--url <server-url>] [extra args...]
+#   moses codex  <agent-name> [--layer <layer>] [--url <server-url>] [extra args...]
+#
+# Extra args are passed to claude/codex unchanged (for example an opening prompt).
+# LOCALMESH_URL and LOCALMESH_LAYER are used when --url/--layer are not given.
+set -euo pipefail
+
+usage() {
+  sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' >&2
+  exit "${1:-1}"
+}
+
+# Resolve symlinks so the repo is found when moses is linked into PATH.
+src="${BASH_SOURCE[0]}"
+while [ -L "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  [[ "$src" != /* ]] && src="$dir/$src"
+done
+repo="$(cd -P "$(dirname "$src")/.." && pwd)"
+tsx="$repo/mcp/node_modules/.bin/tsx"
+entry="$repo/mcp/src/index.ts"
+
+[ $# -ge 1 ] || usage
+case "$1" in -h|--help) usage 0 ;; esac
+tool="$1"; shift
+[ $# -ge 1 ] || { echo "moses: agent name is required, e.g. moses $tool enes1" >&2; exit 1; }
+agent="$1"; shift
+
+layer="${LOCALMESH_LAYER:-}"
+url="${LOCALMESH_URL:-http://127.0.0.1:4777}"
+passthrough=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --layer) layer="${2:?--layer needs a value}"; shift 2 ;;
+    --url) url="${2:?--url needs a value}"; shift 2 ;;
+    *) passthrough+=("$1"); shift ;;
+  esac
+done
+
+if [[ ! "$agent" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo "moses: agent name may only contain letters, digits, '.', '_' and '-'" >&2
+  exit 1
+fi
+[ -x "$tsx" ] || { echo "moses: run 'npm install' in $repo/mcp first" >&2; exit 1; }
+
+# Escape for JSON and TOML basic strings, which share these rules.
+quote() { local s="${1//\\/\\\\}"; s="${s//\"/\\\"}"; printf '"%s"' "$s"; }
+
+case "$tool" in
+  claude)
+    command -v claude >/dev/null || { echo "moses: claude is not installed" >&2; exit 1; }
+    config="{\"mcpServers\":{\"localmesh\":{\"command\":$(quote "$tsx"),\"args\":[$(quote "$entry")],\
+\"env\":{\"LOCALMESH_URL\":$(quote "$url"),\"LOCALMESH_AGENT\":$(quote "$agent"),\"LOCALMESH_LAYER\":$(quote "$layer")}}}}"
+    exec claude --mcp-config "$config" --strict-mcp-config \
+      --allowedTools mcp__localmesh \
+      --dangerously-load-development-channels server:localmesh \
+      ${passthrough[@]+"${passthrough[@]}"}
+    ;;
+  codex)
+    command -v codex >/dev/null || { echo "moses: codex is not installed" >&2; exit 1; }
+    config=(
+      -c "mcp_servers.localmesh.command=$(quote "$tsx")"
+      -c "mcp_servers.localmesh.args=[$(quote "$entry")]"
+      -c "mcp_servers.localmesh.env={LOCALMESH_URL=$(quote "$url"),LOCALMESH_AGENT=$(quote "$agent"),LOCALMESH_LAYER=$(quote "$layer")}"
+      -c 'mcp_servers.localmesh.default_tools_approval_mode="approve"'
+    )
+    # Codex ignores -c given before the exec/resume subcommands, so put the
+    # overrides after the subcommand when one is used.
+    case "${passthrough[0]:-}" in
+      exec|e|resume)
+        exec codex "${passthrough[0]}" "${config[@]}" "${passthrough[@]:1}" ;;
+      *)
+        exec codex "${config[@]}" ${passthrough[@]+"${passthrough[@]}"} ;;
+    esac
+    ;;
+  *)
+    echo "moses: unknown tool '$tool' (use claude or codex)" >&2
+    exit 1
+    ;;
+esac

@@ -76,7 +76,7 @@ const instructions = [
   'At the start of a session, call get_questions with unanswered=true and answer the questions you can.',
   'Use post_note for status updates others should see, and ask_question (with `to` for a specific agent) when you need an answer.',
   'To wait for replies or new work, call wait_for_activity in a loop. Answer each returned question with answer_question;',
-  'after asking a question, use get_question with its id to read the answer.',
+  'Answers to questions you asked also arrive through wait_for_activity (or read one with get_question).',
   'When this session loads LocalMesh as a channel, new work is pushed to you without polling:',
   '<channel source="localmesh" kind="question" id="..." from="..."> is a question for you; answer it with answer_question using that id.',
   '<channel source="localmesh" kind="answer" id="..." from="..."> is the answer to a question you asked; continue the work that depended on it.',
@@ -161,15 +161,23 @@ server.registerTool('get_state', {
 
 // Notes are a feed: skip history that existed before this process started.
 // Unanswered questions are pending work: deliver ones asked while this agent was
-// offline, so questionCursor starts at 0.
+// offline, so questionCursor starts at 0. Answers to this agent's questions
+// are news only if they arrive after this process started.
 let noteCursor = 0;
 let questionCursor = 0;
+const deliveredAnswers = new Set<number>();
 let cursorsReady: Promise<void> | undefined;
 
+function myQuestions() {
+  return request<{ questions: QuestionDetail[] }>('GET', '/api/state')
+    .then(({ questions }) => questions.filter(question => question.from === agent));
+}
+
 function ensureCursors(): Promise<void> {
-  cursorsReady ??= request<Note[]>('GET', `/api/notes${query({ exclude: agent })}`)
-    .then(notes => {
+  cursorsReady ??= Promise.all([request<Note[]>('GET', `/api/notes${query({ exclude: agent })}`), myQuestions()])
+    .then(([notes, mine]) => {
       noteCursor = notes.reduce((max, note) => Math.max(max, note.id), 0);
+      for (const question of mine) if (question.answer !== undefined) deliveredAnswers.add(question.id);
     })
     .catch(error => {
       // Retry on the next call instead of falling back to cursor 0 and
@@ -181,9 +189,10 @@ function ensureCursors(): Promise<void> {
 }
 
 async function pollActivity() {
-  const [notes, questions] = await Promise.all([
+  const [notes, questions, mine] = await Promise.all([
     request<Note[]>('GET', `/api/notes${query({ since: noteCursor, exclude: agent })}`),
     request<Question[]>('GET', `/api/questions${query({ for: agent, unanswered: true })}`),
+    myQuestions(),
   ]);
   // Filter against the cursors after the await so overlapping calls never
   // deliver the same item twice.
@@ -191,11 +200,14 @@ async function pollActivity() {
   const newQuestions = questions.filter(question => question.id > questionCursor);
   if (newNotes.length) noteCursor = Math.max(noteCursor, ...newNotes.map(note => note.id));
   if (newQuestions.length) questionCursor = Math.max(questionCursor, ...newQuestions.map(question => question.id));
-  return { notes: newNotes, questions: newQuestions };
+  const answers = mine.filter(question => question.answer !== undefined && !deliveredAnswers.has(question.id));
+  for (const question of answers) deliveredAnswers.add(question.id);
+  return { notes: newNotes, questions: newQuestions, answers };
 }
 
 server.registerTool('wait_for_activity', {
-  description: 'Wait up to `timeout` seconds for new notes from other agents or unanswered questions for this agent. ' +
+  description: 'Wait up to `timeout` seconds for new notes from other agents, unanswered questions for this agent, ' +
+    'or answers to questions this agent asked. ' +
     'Each item is returned once per MCP process. Returns immediately when activity exists; ' +
     'returns { timeout: true } when nothing arrived.',
   inputSchema: { timeout: z.number().int().min(1).max(60).default(30) },
@@ -204,11 +216,11 @@ server.registerTool('wait_for_activity', {
   const deadline = Date.now() + timeout * 1_000;
   while (true) {
     const activity = await pollActivity();
-    if (activity.notes.length || activity.questions.length) {
+    if (activity.notes.length || activity.questions.length || activity.answers.length) {
       return { timeout: false, ...activity };
     }
     const remaining = deadline - Date.now();
-    if (remaining <= 0) return { timeout: true, notes: [], questions: [] };
+    if (remaining <= 0) return { timeout: true, notes: [], questions: [], answers: [] };
     await new Promise(resolve => setTimeout(resolve, Math.min(pollIntervalMs, remaining)));
   }
 }));
