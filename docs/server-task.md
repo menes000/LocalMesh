@@ -7,7 +7,7 @@ The secret comes from `LOCALMESH_SECRET` or `server/.localmesh-secret`, which
 (`scripts/rotate-secret.mjs`). A join token is `lm1_` + base64url of `<server url>|<secret>`.
 `/health` is unauthenticated. The response field names and shapes below are
 the contract consumed by `/mcp`; keep them exact. IDs are monotonically
-increasing integers shared by notes and questions. `ts` is an ISO 8601 string.
+increasing integers. `ts` is an ISO 8601 string.
 
 ## Agents
 
@@ -48,22 +48,6 @@ startup and every minute.
 
 `online` is true when `lastSeen` is less than 30 seconds ago.
 
-## Notes
-
-`POST /api/notes`
-
-Request:
-
-```json
-{ "agent": "coder-a", "text": "The parser is ready.", "tags": ["status"] }
-```
-
-`tags` is optional. Success response is exactly `{ "id": 1, "ts": "..." }`.
-
-`GET /api/notes?since=<id>&exclude=<agent>` returns an array of
-`{ "id", "ts", "agent", "text", "tags" }`. `since` is exclusive; `exclude`
-omits notes written by that agent. Both query parameters are optional.
-
 ## Questions
 
 `POST /api/questions`
@@ -100,7 +84,7 @@ HTTP 200 with `{ "ok": false, "reason": "already answered" }`.
 ## State
 
 `GET /api/state` returns exactly
-`{ "agents": [...], "notes": [...], "questions": [...], "claims": [] }`.
+`{ "agents": [...], "questions": [...], "claims": [] }`.
 
 ## Persistence and errors
 

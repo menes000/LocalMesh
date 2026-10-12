@@ -32,7 +32,6 @@ const heartbeatIntervalMs = 12_000;
 const session = randomUUID();
 const pushIntervalMs = 1_500;
 
-type Note = { id: number; ts: string; agent: string; text: string; tags: string[] };
 type Question = { id: number; ts: string; from: string; to?: string; question: string };
 type QuestionDetail = Question & { answer?: string; answeredBy?: string; answeredAt?: string };
 
@@ -98,10 +97,10 @@ async function callTool(action: () => Promise<unknown>) {
 }
 
 const instructions = [
-  `You are LocalMesh agent "${agent}". Other agents on the same LAN share notes and questions through these tools.`,
+  `You are LocalMesh agent "${agent}". Other agents on the same LAN ask and answer questions through these tools.`,
   'Your identity is fixed by configuration; never claim to be another agent.',
   'At the start of a session, call get_questions with unanswered=true and answer the questions you can.',
-  'Use post_note for status updates others should see, and ask_question (with `to` for a specific agent) when you need an answer.',
+  'Use ask_question (with `to` for a specific agent, or without it to ask everyone) when you need an answer.',
   'To wait for replies or new work, call wait_for_activity in a loop. Answer each returned question with answer_question;',
   'Answers to questions you asked also arrive through wait_for_activity (or read one with get_question).',
   'When this session loads LocalMesh as a channel, new work is pushed to you without polling:',
@@ -135,25 +134,6 @@ server.registerTool('list_agents', {
   description: 'List agents registered on LocalMesh.',
   inputSchema: {},
 }, () => callTool(() => request('GET', '/api/agents')));
-
-server.registerTool('post_note', {
-  description: 'Post a note from this agent.',
-  inputSchema: { text: z.string().min(1), tags: z.array(z.string()).optional() },
-}, ({ text, tags }) => callTool(async () => {
-  await claimName();
-  return request('POST', '/api/notes', { agent, text, ...(tags === undefined ? {} : { tags }) });
-}));
-
-server.registerTool('get_notes', {
-  description: 'Get notes newer than an optional ID, excluding this agent by default.',
-  inputSchema: {
-    since: z.number().int().nonnegative().optional(),
-    exclude: z.string().optional(),
-  },
-}, ({ since, exclude }) => callTool(() => request('GET', `/api/notes${query({
-  since,
-  exclude: exclude ?? agent,
-})}`)));
 
 server.registerTool('ask_question', {
   description: 'Ask a question as this agent, optionally addressed to another agent.',
@@ -189,11 +169,9 @@ server.registerTool('get_state', {
   inputSchema: {},
 }, () => callTool(() => request('GET', '/api/state')));
 
-// Notes are a feed: skip history that existed before this process started.
 // Unanswered questions are pending work: deliver ones asked while this agent was
 // offline, so questionCursor starts at 0. Answers to this agent's questions
 // are news only if they arrive after this process started.
-let noteCursor = 0;
 let questionCursor = 0;
 const deliveredAnswers = new Set<number>();
 let cursorsReady: Promise<void> | undefined;
@@ -204,14 +182,12 @@ function myQuestions() {
 }
 
 function ensureCursors(): Promise<void> {
-  cursorsReady ??= Promise.all([request<Note[]>('GET', `/api/notes${query({ exclude: agent })}`), myQuestions()])
-    .then(([notes, mine]) => {
-      noteCursor = notes.reduce((max, note) => Math.max(max, note.id), 0);
+  cursorsReady ??= myQuestions()
+    .then(mine => {
       for (const question of mine) if (question.answer !== undefined) deliveredAnswers.add(question.id);
     })
     .catch(error => {
-      // Retry on the next call instead of falling back to cursor 0 and
-      // replaying every historical note as new activity.
+      // Retry on the next call instead of treating every old answer as new.
       cursorsReady = undefined;
       throw error;
     });
@@ -219,24 +195,21 @@ function ensureCursors(): Promise<void> {
 }
 
 async function pollActivity() {
-  const [notes, questions, mine] = await Promise.all([
-    request<Note[]>('GET', `/api/notes${query({ since: noteCursor, exclude: agent })}`),
+  const [questions, mine] = await Promise.all([
     request<Question[]>('GET', `/api/questions${query({ for: agent, unanswered: true })}`),
     myQuestions(),
   ]);
   // Filter against the cursors after the await so overlapping calls never
   // deliver the same item twice.
-  const newNotes = notes.filter(note => note.id > noteCursor);
   const newQuestions = questions.filter(question => question.id > questionCursor);
-  if (newNotes.length) noteCursor = Math.max(noteCursor, ...newNotes.map(note => note.id));
   if (newQuestions.length) questionCursor = Math.max(questionCursor, ...newQuestions.map(question => question.id));
   const answers = mine.filter(question => question.answer !== undefined && !deliveredAnswers.has(question.id));
   for (const question of answers) deliveredAnswers.add(question.id);
-  return { notes: newNotes, questions: newQuestions, answers };
+  return { questions: newQuestions, answers };
 }
 
 server.registerTool('wait_for_activity', {
-  description: 'Wait up to `timeout` seconds for new notes from other agents, unanswered questions for this agent, ' +
+  description: 'Wait up to `timeout` seconds for unanswered questions for this agent ' +
     'or answers to questions this agent asked. ' +
     'Each item is returned once per MCP process. Returns immediately when activity exists; ' +
     'returns { timeout: true } when nothing arrived.',
@@ -247,11 +220,11 @@ server.registerTool('wait_for_activity', {
   const deadline = Date.now() + timeout * 1_000;
   while (true) {
     const activity = await pollActivity();
-    if (activity.notes.length || activity.questions.length || activity.answers.length) {
+    if (activity.questions.length || activity.answers.length) {
       return { timeout: false, ...activity };
     }
     const remaining = deadline - Date.now();
-    if (remaining <= 0) return { timeout: true, notes: [], questions: [], answers: [] };
+    if (remaining <= 0) return { timeout: true, questions: [], answers: [] };
     await new Promise(resolve => setTimeout(resolve, Math.min(pollIntervalMs, remaining)));
   }
 }));
@@ -374,7 +347,7 @@ async function main() {
     void pushActivity().catch(error => console.error(`Channel push failed: ${String(error)}`));
   }, pushIntervalMs);
   pushTimer.unref();
-  // Start the note cursor at connect time without delaying the MCP handshake
+  // Record already-answered questions at connect time without delaying the MCP handshake
   // when the LocalMesh server is unreachable.
   void ensureCursors().catch(error => console.error(`Could not initialize activity cursors: ${String(error)}`));
 }

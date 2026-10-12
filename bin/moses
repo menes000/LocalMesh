@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Start a Claude Code or Codex session connected to LocalMesh.
+# Start the LocalMesh server, or a Claude Code or Codex session connected to it.
 #
+#   moses server
 #   moses claude -n <agent-name> -t <join-token> [--layer <layer>] [--url <server-url>] [extra args...]
 #   moses codex  -n <agent-name> -t <join-token> [--layer <layer>] [--url <server-url>] [extra args...]
 #
@@ -8,11 +9,12 @@
 #
 # The join token (printed by the server at startup) holds the server address and
 # its secret. Set LOCALMESH_TOKEN once instead of passing --token every time.
+# On the computer running "moses server", no token is needed.
 # --url overrides the address in the token. Extra args go to claude/codex unchanged.
 set -euo pipefail
 
 usage() {
-  sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//' >&2
+  sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' >&2
   exit "${1:-1}"
 }
 
@@ -31,8 +33,20 @@ entry="$repo/mcp/src/index.ts"
 case "$1" in -h|--help) usage 0 ;; esac
 tool="$1"; shift
 
+# The server runs from the repo regardless of the current directory; npm run dev
+# makes a new secret, so it prints a new join token on every start.
+if [ "$tool" = server ]; then
+  [ -d "$repo/server/node_modules" ] || { echo "moses: run 'npm install' in $repo/server first" >&2; exit 1; }
+  cd "$repo/server"
+  exec npm run dev
+fi
+case "$tool" in
+  claude|codex) ;;
+  *) echo "moses: unknown command '$tool' (use server, claude or codex)" >&2; exit 1 ;;
+esac
+
 agent=""
-token="${LOCALMESH_TOKEN:-}"
+token=""
 layer="${LOCALMESH_LAYER:-}"
 url=""
 passthrough=()
@@ -51,14 +65,30 @@ if [[ ! "$agent" =~ ^[A-Za-z0-9._-]+$ ]]; then
   echo "moses: agent name may only contain letters, digits, '.', '_' and '-'" >&2
   exit 1
 fi
-[ -n "$token" ] || {
+# Without -t, an agent on the server's own computer needs no token: use the
+# secret the running local server wrote, if that server accepts it.
+secret=""
+local_secret_file="$repo/server/.localmesh-secret"
+if [ -z "$token" ] && [ -f "$local_secret_file" ]; then
+  candidate="$(tr -d '[:space:]' < "$local_secret_file")"
+  local_url="${url:-http://127.0.0.1:${PORT:-4777}}"
+  if [ -n "$candidate" ] && [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 \
+      -H "Authorization: Bearer $candidate" "$local_url/api/agents" 2>/dev/null)" = 200 ]; then
+    secret="$candidate"
+    url="$local_url"
+  fi
+fi
+token="${token:-${LOCALMESH_TOKEN:-}}"
+[ -n "$secret" ] || [ -n "$token" ] || {
   echo "moses: --token is required (or set LOCALMESH_TOKEN). The server prints it at startup." >&2
   exit 1
 }
 
 # Token format: "lm1_" + base64url("<server url>|<secret>").
 decoded=""
-if [[ "$token" == lm1_* ]]; then
+if [ -n "$secret" ]; then
+  decoded="$url|$secret"
+elif [[ "$token" == lm1_* ]]; then
   b64="${token#lm1_}"; b64="${b64//-/+}"; b64="${b64//_//}"
   case $(( ${#b64} % 4 )) in 2) b64="$b64==" ;; 3) b64="$b64=" ;; esac
   decoded="$(printf '%s' "$b64" | base64 --decode 2>/dev/null || true)"
@@ -132,7 +162,7 @@ case "$tool" in
     esac
     ;;
   *)
-    echo "moses: unknown tool '$tool' (use claude or codex)" >&2
+    echo "moses: unknown command '$tool' (use server, claude or codex)" >&2
     exit 1
     ;;
 esac

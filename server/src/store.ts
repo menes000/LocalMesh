@@ -4,7 +4,6 @@ import { fileURLToPath } from 'node:url';
 
 // session is a secret per-process token: only its holder may heartbeat as this name while it is online.
 export type Agent = { agent: string; layer: string; lastSeen: string; client?: string; session?: string };
-export type Note = { id: number; ts: string; agent: string; text: string; tags?: string[] };
 export type Question = {
   id: number;
   ts: string;
@@ -15,16 +14,16 @@ export type Question = {
   answeredBy?: string;
   answeredAt?: string;
 };
-export type State = { agents: Agent[]; notes: Note[]; questions: Question[]; nextId: number };
+export type State = { agents: Agent[]; questions: Question[]; nextId: number };
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const statePath = path.resolve(here, '../state.json');
-const emptyState = (): State => ({ agents: [], notes: [], questions: [], nextId: 1 });
+const emptyState = (): State => ({ agents: [], questions: [], nextId: 1 });
 
 function validState(value: unknown): value is State {
   if (!value || typeof value !== 'object') return false;
   const s = value as Partial<State>;
-  return Array.isArray(s.agents) && Array.isArray(s.notes) && Array.isArray(s.questions) &&
+  return Array.isArray(s.agents) && Array.isArray(s.questions) &&
     Number.isSafeInteger(s.nextId) && (s.nextId as number) > 0;
 }
 
@@ -46,18 +45,6 @@ function migrateState(value: State): State {
       ...(typeof item.session === 'string' ? { session: item.session } : {}),
     };
   }).filter(item => item.agent.trim().length > 0);
-  const notes = value.notes.map(raw => {
-    const item = record(raw);
-    const tags = Array.isArray(item.tags) && item.tags.every(tag => typeof tag === 'string')
-      ? item.tags as string[] : [];
-    return {
-      id: Number(item.id),
-      ts: typeof item.ts === 'string' ? item.ts : String(item.createdAt ?? ''),
-      agent: typeof item.agent === 'string' ? item.agent : String(item.from ?? ''),
-      text: typeof item.text === 'string' ? item.text : String(item.content ?? ''),
-      tags,
-    };
-  }).filter(item => validId(item.id));
   const questions = value.questions.map(raw => {
     const item = record(raw);
     return {
@@ -71,8 +58,10 @@ function migrateState(value: State): State {
       ...(typeof item.answeredAt === 'string' ? { answeredAt: item.answeredAt } : {}),
     };
   }).filter(item => validId(item.id));
-  const highestId = Math.max(0, ...notes.map(item => item.id), ...questions.map(item => item.id));
-  return { agents, notes, questions, nextId: Math.max(value.nextId, highestId + 1) };
+  // Notes were removed; a "notes" list in an older state.json is dropped here.
+  // nextId already covers their ids, so new question ids stay unique.
+  const highestId = Math.max(0, ...questions.map(item => item.id));
+  return { agents, questions, nextId: Math.max(value.nextId, highestId + 1) };
 }
 
 async function load(): Promise<State> {

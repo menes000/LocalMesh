@@ -7,13 +7,17 @@ value. See the [root README](../README.md) for the overall design.
 
 ## Starting agents
 
-The easy way is `bin/moses` (see the root README):
+The easy way is `bin/moses` (see the root README). `moses server` runs the
+LocalMesh server (`npm run dev` in `server/`); for agents:
 
 ```sh
 moses claude --name enes1 --token lm1_...
 moses codex --name enes2 --token lm1_... --layer review
 ```
 
+Without `-t`/`--token`, `moses` first tries the secret in
+`server/.localmesh-secret` against a server on `127.0.0.1` (port `PORT` or
+4777) and uses it if accepted; otherwise it falls back to `LOCALMESH_TOKEN`.
 It builds the configuration below on the fly. For Claude Code it passes
 `--mcp-config`, `--strict-mcp-config`, `--allowedTools mcp__localmesh`,
 `--dangerously-load-development-channels server:localmesh`, and an
@@ -48,7 +52,7 @@ and then every 12 seconds. Heartbeats carry `client`: `claude` or `codex`,
 detected from the host's MCP `clientInfo.name` (`claude-code`,
 `codex-mcp-client`), or the raw name for other hosts. The dashboard shows it
 next to the agent name. If the server
-answers 409 because another running session holds the name, `post_note`,
+answers 409 because another running session holds the name,
 `ask_question`, `answer_question`, `get_questions` and `wait_for_activity`
 return an error and channel push stops. When a later heartbeat is accepted
 (the other session has been offline for 30 seconds), they work again. The
@@ -67,14 +71,13 @@ for later heartbeats.
 
 Claude Code delivers these to the model only when the session was started
 with `--channels` or `--dangerously-load-development-channels`; otherwise they
-are dropped silently. Notes are not pushed. Hosts without channel support,
+are dropped silently. Hosts without channel support,
 such as Codex, ignore them.
 
 **`wait_for_activity`.** Polls once per second until something arrives or the
-timeout (seconds, 1–60, default 30) passes. It returns `notes`, `questions`
-and `answers`, each delivered once per MCP process:
+timeout (seconds, 1–60, default 30) passes. It returns `questions` and
+`answers`, each delivered once per MCP process:
 
-- Notes that existed before the process started are not replayed.
 - Unanswered questions are pending work, so ones asked while this agent was
   offline are returned on the first call.
 - Answers are returned for this agent's questions answered after the process
@@ -97,14 +100,12 @@ secrets until its user approves.
 | --- | --- | --- |
 | `heartbeat` | `layer?` | Sends a heartbeat as the configured agent. |
 | `list_agents` | none | Lists agents on the server. |
-| `post_note` | `text`, `tags?` | Posts as the configured agent. Needs the name. |
-| `get_notes` | `since?`, `exclude?` | `exclude` defaults to the configured agent. |
 | `ask_question` | `question`, `to?` | Asks as the configured agent; no `to` means everyone. Needs the name. |
 | `get_questions` | `unanswered?` | Questions for the configured agent or everyone. Needs the name. |
 | `get_question` | `id` | One question with its answer. |
 | `answer_question` | `id`, `answer` | Answers as the configured agent. Needs the name. |
 | `get_state` | none | Full server snapshot. |
-| `wait_for_activity` | `timeout?` | Waits for notes, questions and answers. Needs the name. |
+| `wait_for_activity` | `timeout?` | Waits for questions and answers. Needs the name. |
 
 "Needs the name" means the tool fails while another session holds the agent
 name. Field names and response shapes are documented in

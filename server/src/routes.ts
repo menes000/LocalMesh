@@ -14,12 +14,6 @@ const parseId = (value: string): number | undefined => {
   const id = Number(value);
   return Number.isSafeInteger(id) && id > 0 ? id : undefined;
 };
-const parseCursor = (value: string): number | undefined => {
-  if (!/^\d+$/.test(value)) return undefined;
-  const id = Number(value);
-  return Number.isSafeInteger(id) && id >= 0 ? id : undefined;
-};
-
 const onlineMs = 30_000;
 const isOnline = (lastSeen: string) => Date.now() - Date.parse(lastSeen) < onlineMs;
 
@@ -29,14 +23,6 @@ const agentList = () => state.agents.map(agent => ({
   lastSeen: agent.lastSeen,
   online: isOnline(agent.lastSeen),
   ...(agent.client === undefined ? {} : { client: agent.client }),
-}));
-
-const noteList = () => state.notes.map(note => ({
-  id: note.id,
-  ts: note.ts,
-  agent: note.agent,
-  text: note.text,
-  tags: note.tags ?? [],
 }));
 
 const questionDetail = (question: (typeof state.questions)[number]) => ({
@@ -80,38 +66,6 @@ router.post('/agents/heartbeat', async (req, res) => {
       return res.status(409).json({ error: `agent name "${agent.trim()}" is already used by another running session` });
     }
     return res.json({ ok: true });
-  } catch (error) {
-    return failed(res, error);
-  }
-});
-
-router.get('/notes', (req, res) => {
-  const sinceValue = req.query.since;
-  const since = sinceValue === undefined ? 0 : parseCursor(String(sinceValue));
-  if (since === undefined) return bad(res, 'since must be a non-negative integer');
-  const exclude = typeof req.query.exclude === 'string' ? req.query.exclude.trim() : undefined;
-  return res.json(noteList().filter(note => note.id > since && note.agent !== exclude));
-});
-
-router.post('/notes', async (req, res) => {
-  try {
-    const { agent, text, tags } = req.body ?? {};
-    if (!str(agent) || !str(text)) return bad(res, 'agent and text must be non-empty strings');
-    if (tags !== undefined && (!Array.isArray(tags) || !tags.every((tag: unknown) => typeof tag === 'string'))) {
-      return bad(res, 'tags must be an array of strings');
-    }
-    const note = await mutate(() => {
-      const value = {
-        id: allocateId(),
-        ts: now(),
-        agent: agent.trim(),
-        text,
-        tags: tags === undefined ? [] : [...tags],
-      };
-      state.notes.push(value);
-      return { id: value.id, ts: value.ts };
-    });
-    return res.status(201).json(note);
   } catch (error) {
     return failed(res, error);
   }
@@ -191,7 +145,6 @@ router.post('/questions/:id/answer', async (req, res) => {
 
 router.get('/state', (_req, res) => res.json({
   agents: agentList(),
-  notes: noteList(),
   questions: state.questions.map(questionDetail),
   claims: [],
 }));

@@ -44,10 +44,10 @@ Ağda **tek bir** server çalışır. Önce server'ı kimin açacağına karar v
 ### Server'ı sen açıyorsan
 
 ```sh
-cd server
-npm run dev
+moses server
 ```
 
+Bu, `cd server && npm run dev` ile aynı şey; hangi klasörde olduğun fark etmez.
 Açılışta şuna benzer satırlar çıkar:
 
 ```
@@ -60,7 +60,7 @@ Join token for http://192.168.1.35:4777:
 ```
 
 **Join token**'ı (`lm1_...`) ekibe ver. İçinde hem server adresi hem şifre var;
-ekip dışına verme. **Her `npm run dev`'de yeni şifre ve yeni token üretilir**,
+ekip dışına verme. **Her `moses server`'da yeni şifre ve yeni token üretilir**,
 eskisi çalışmaz; server'ı her açtığında yeni token'ı ekibe ver. Kod değişince
 server'ın kendini yeniden başlatması token'ı değiştirmez. Bu terminal açık
 kaldığı sürece server çalışır.
@@ -80,7 +80,8 @@ source ~/.zshrc
 
 ## 4. Ajanı başlat
 
-Her ajanın ağda **benzersiz** bir adı olmalı:
+Her ajanın ağda **benzersiz** bir adı olmalı. Server'ı açan bilgisayarda token
+gerekmez; `moses` şifreyi yerel server'dan kendisi alır:
 
 ```sh
 moses claude --name enes1                    # Claude Code ajanı
@@ -119,7 +120,7 @@ ajanları ve konuşmayı görürsün; buradan bir ajana soru da sorabilirsin.
 | Claude soruları kendiliğinden görmüyor | Oturumu `moses claude --name <isim>` ile açtığından emin ol; uyarı ekranında channels'ı onayla. |
 | Server'ın IP'si değişti | Server açılışındaki yeni token'ı al, `~/.zshrc`'deki `LOCALMESH_TOKEN`'ı güncelle. Ya da geçici olarak `--url http://<yeni-ip>:4777` ekle. |
 | Dashboard "Locked" diyor | Sayfayı yenile ve join token'ı yapıştır, ya da server açılışındaki Dashboard linkini aç. |
-| Token sızdı | Server'ı durdurup `npm run dev` ile yeniden aç; yeni token'ı ekibe ver. |
+| Token sızdı | Server'ı durdurup (Ctrl+C) `moses server` ile yeniden aç; yeni token'ı ekibe ver. |
 
 ## Güncelleme
 
