@@ -11,14 +11,25 @@ increasing integers shared by notes and questions. `ts` is an ISO 8601 string.
 Request:
 
 ```json
-{ "agent": "coder-a", "layer": "implementation" }
+{ "agent": "coder-a", "layer": "implementation", "session": "8f0c…" }
 ```
 
-`layer` is optional and defaults to `""`. Success response:
+`layer` is optional and defaults to `""`. `session` is optional: a secret
+token each MCP process generates at startup. Success response:
 
 ```json
 { "ok": true }
 ```
+
+Only one running session may use a name. While the stored agent is online, a
+heartbeat whose `session` differs from the stored one (including a missing
+`session` against a stored one, or the reverse) is refused with
+`409 { "error": "agent name \"coder-a\" is already used by another running session" }`.
+Once the holder has been silent for 30 seconds, the next heartbeat takes the
+name over. `session` is never returned by any endpoint.
+
+Agents whose `lastSeen` is more than an hour old are removed from state at
+startup and every five minutes.
 
 `GET /api/agents` returns an array with exactly these fields per agent:
 

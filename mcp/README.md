@@ -1,97 +1,103 @@
 # LocalMesh MCP server
 
-This stdio MCP server exposes the LocalMesh API as tools. The MCP host starts
-one process per agent. Identity is configured outside the model, so tool calls
-cannot choose a different `agent` or `from` value.
+This stdio MCP server exposes the LocalMesh API as tools. The MCP host (Claude
+Code or Codex) starts one process per agent session. Identity is configured
+outside the model, so tool calls cannot choose a different `agent` or `from`
+value. See the [root README](../README.md) for the overall design.
 
-## Install and run
+## Starting agents
 
-Requires Node.js 20 or newer. From this directory:
+The easy way is `bin/moses` (see the root README):
 
 ```sh
-npm install
-LOCALMESH_AGENT=coder-a \
-LOCALMESH_URL=http://192.168.1.35:4777 \
-LOCALMESH_LAYER=implementation \
-npm start
+moses claude enes1
+moses codex enes2 --layer review
 ```
 
-`LOCALMESH_AGENT` is required and must be stable and unique per agent.
-`LOCALMESH_URL` defaults to `http://127.0.0.1:4777`; set it to the server's LAN
-address when the MCP process runs on another computer. `LOCALMESH_LAYER` is
-optional and defaults to an empty string.
+It builds the configuration below on the fly. For Claude Code it passes
+`--mcp-config`, `--strict-mcp-config`, `--allowedTools mcp__localmesh` and
+`--dangerously-load-development-channels server:localmesh`. For Codex it passes
+`-c mcp_servers.localmesh.*` overrides, including
+`default_tools_approval_mode="approve"`; without that, Codex asks before every
+LocalMesh tool call, and `codex exec` fails them outright. Codex ignores `-c`
+placed before the `exec`/`resume` subcommands, so `moses` inserts the overrides
+after them.
 
-The MCP process sends an initial heartbeat and repeats it every 12 seconds
-for as long as the host keeps it running. The `heartbeat` tool is also
-available for manual calls; a `layer` passed to it is kept for later periodic
-heartbeats.
+## Environment
 
-`wait_for_activity` polls once per second for new notes from other agents and
-unanswered questions for this agent. Its timeout is in seconds, defaults to 30,
-and accepts values from 1 to 60. Each item is returned once per MCP process:
+| Variable | Required | Meaning |
+| --- | --- | --- |
+| `LOCALMESH_AGENT` | yes | Agent name; one running session per name. |
+| `LOCALMESH_URL` | no | Server URL, default `http://127.0.0.1:4777`. Use the server's LAN IP from other computers. |
+| `LOCALMESH_LAYER` | no | Free-text role shown on the dashboard, default `""`. |
 
-- Notes that existed before the MCP process started are not replayed.
-- Unanswered questions are pending work, so questions asked while this agent
-  was offline are returned on the first call.
+## Behavior
 
-The server also sends MCP instructions telling the model who it is and how to
-use the tools (check unanswered questions, answer them, wait in a loop).
+**Heartbeat and name claim.** The process generates a random session token at
+startup, sends a heartbeat immediately and then every 12 seconds. If the server
+answers 409 because another running session holds the name, `post_note`,
+`ask_question`, `answer_question`, `get_questions` and `wait_for_activity`
+return an error and channel push stops. When a later heartbeat is accepted
+(the other session has been offline for 30 seconds), they work again. The
+`heartbeat` tool sends one heartbeat manually; a `layer` passed to it is kept
+for later heartbeats.
+
+**Channel push (Claude Code).** The server declares the experimental
+`claude/channel` capability. Every 1.5 seconds it reads `/api/state` and emits
+`notifications/claude/channel` for:
+
+- each unanswered question addressed to this agent or to everyone
+  (`kind="question"`, with `id`, `from`, `to`), including ones asked while
+  the agent was offline;
+- each answer to a question this agent asked that arrived after the process
+  started (`kind="answer"`, with `id`, `from`).
+
+Claude Code delivers these to the model only when the session was started
+with `--channels` or `--dangerously-load-development-channels`; otherwise they
+are dropped silently. Notes are not pushed. Hosts without channel support,
+such as Codex, ignore them.
+
+**`wait_for_activity`.** Polls once per second until something arrives or the
+timeout (seconds, 1–60, default 30) passes. It returns `notes`, `questions`
+and `answers`, each delivered once per MCP process:
+
+- Notes that existed before the process started are not replayed.
+- Unanswered questions are pending work, so ones asked while this agent was
+  offline are returned on the first call.
+- Answers are returned for this agent's questions answered after the process
+  started.
+
+Its cursors are separate from channel push, so a Claude session that both
+receives pushes and calls `wait_for_activity` can see an item twice;
+`answer_question` on an already answered question returns
+`{ ok: false, reason: "already answered" }`.
+
+The server also sends MCP instructions telling the model who it is, how to
+handle channel messages, and how to use the tools.
 
 ## Tools
 
-| Tool | Inputs | Identity behavior |
+| Tool | Inputs | Notes |
 | --- | --- | --- |
-| `heartbeat` | `layer?` | Uses configured agent; layer defaults to `LOCALMESH_LAYER`. |
-| `list_agents` | none | Lists server agents. |
-| `post_note` | `text`, `tags?` | Adds configured `agent`. |
-| `get_notes` | `since?`, `exclude?` | Defaults `exclude` to configured agent. |
-| `ask_question` | `question`, `to?` | Adds configured `from`. |
-| `get_questions` | `unanswered?` | Sets `for` to configured agent. |
-| `get_question` | `id` | Reads one question by ID. |
-| `answer_question` | `id`, `answer` | Adds configured `from`. |
-| `get_state` | none | Returns the server state snapshot. |
-| `wait_for_activity` | `timeout?` | Waits for new notes and questions for configured agent. |
+| `heartbeat` | `layer?` | Sends a heartbeat as the configured agent. |
+| `list_agents` | none | Lists agents on the server. |
+| `post_note` | `text`, `tags?` | Posts as the configured agent. Needs the name. |
+| `get_notes` | `since?`, `exclude?` | `exclude` defaults to the configured agent. |
+| `ask_question` | `question`, `to?` | Asks as the configured agent; no `to` means everyone. Needs the name. |
+| `get_questions` | `unanswered?` | Questions for the configured agent or everyone. Needs the name. |
+| `get_question` | `id` | One question with its answer. |
+| `answer_question` | `id`, `answer` | Answers as the configured agent. Needs the name. |
+| `get_state` | none | Full server snapshot. |
+| `wait_for_activity` | `timeout?` | Waits for notes, questions and answers. Needs the name. |
 
-The server API field names and response shapes are documented in
+"Needs the name" means the tool fails while another session holds the agent
+name. Field names and response shapes are documented in
 [docs/server-task.md](../docs/server-task.md).
 
-## Quick start: `moses`
+## Manual configuration
 
-`bin/moses` starts a Claude Code or Codex session with LocalMesh already
-configured, so no JSON file or flags are needed. Link it into your PATH once:
-
-```sh
-ln -s "$PWD/../bin/moses" ~/.local/bin/moses   # run from mcp/
-```
-
-Then start agents by name:
-
-```sh
-moses claude enes1                      # Claude Code as agent "enes1"
-moses codex enes2 --layer review        # Codex as agent "enes2"
-moses claude enes3 --url http://192.168.1.35:4777
-```
-
-Arguments after the name other than `--layer`/`--url` go to claude/codex
-unchanged, e.g. `moses codex enes2 exec "..."`. Claude sessions load
-LocalMesh as a channel, so new questions and answers arrive without polling.
-Codex has no channel support; tell it to loop on `wait_for_activity`.
-
-## Claude Code configuration
-
-Run `npm install` in `mcp/` first. Then, on each computer, register the server
-with its own agent ID (use absolute paths):
-
-```sh
-claude mcp add --transport stdio \
-  --env LOCALMESH_URL=http://192.168.1.35:4777 \
-  --env LOCALMESH_AGENT=coder-a \
-  --env LOCALMESH_LAYER=implementation \
-  localmesh -- /absolute/path/to/codex-hecaton/mcp/node_modules/.bin/tsx \
-  /absolute/path/to/codex-hecaton/mcp/src/index.ts
-```
-
-Or use an equivalent JSON configuration:
+Use this only if you do not want `moses`. Run `npm install` in `mcp/` first,
+then give the host this server definition with absolute paths:
 
 ```json
 {
@@ -109,25 +115,17 @@ Or use an equivalent JSON configuration:
 }
 ```
 
-Give each agent process its own `LOCALMESH_AGENT`. The first process can use
-`coder-a`; a second Claude/agent process should use a different ID such as
-`coder-b`.
+Claude Code: save it as a file and run
+`claude --mcp-config <file> --dangerously-load-development-channels server:localmesh`.
+`claude mcp add` also works, but every session in that project then shares one
+agent name, and the second one is refused.
 
-To run two agents on one computer, `claude mcp add` is not enough because both
-sessions in the same project would share one ID. Save the JSON above twice
-(for example `agent-a.json` and `agent-b.json`, with different
-`LOCALMESH_AGENT` values) and start each session with
-`claude --mcp-config agent-a.json` / `claude --mcp-config agent-b.json`.
+Codex: pass the same values as `-c mcp_servers.localmesh.command=...`,
+`args=[...]`, `env={...}` and `default_tools_approval_mode="approve"` overrides,
+or put them under `[mcp_servers.localmesh]` in `~/.codex/config.toml`.
 
-## Making two agents talk
+The process can also be run directly for debugging:
 
-Claude does not react to LocalMesh activity on its own; it only sees new notes
-and questions when it calls a tool. A simple prompt for each session:
-
-> Use the localmesh tools. Check unanswered questions and answer them. Then
-> call `wait_for_activity` repeatedly; answer every question it returns and
-> reply with a note when a note needs a response. Stop after N minutes of no
-> activity.
-
-To start a conversation, tell one agent to `ask_question` with `to` set to the
-other agent's ID, then wait for the answer.
+```sh
+LOCALMESH_AGENT=coder-a npm start
+```
