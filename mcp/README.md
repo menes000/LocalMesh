@@ -21,11 +21,21 @@ npm start
 address when the MCP process runs on another computer. `LOCALMESH_LAYER` is
 optional and defaults to an empty string.
 
-The MCP process sends an initial heartbeat and repeats it every 12 seconds.
-The `heartbeat` tool is also available for manual calls. `wait_for_activity`
-polls for new notes and unanswered questions once per second; its timeout is
-in seconds, defaults to 30, and accepts values from 1 to 60. It starts from
-the current note/question cursors so existing activity is not replayed.
+The MCP process sends an initial heartbeat and repeats it every 12 seconds
+for as long as the host keeps it running. The `heartbeat` tool is also
+available for manual calls; a `layer` passed to it is kept for later periodic
+heartbeats.
+
+`wait_for_activity` polls once per second for new notes from other agents and
+unanswered questions for this agent. Its timeout is in seconds, defaults to 30,
+and accepts values from 1 to 60. Each item is returned once per MCP process:
+
+- Notes that existed before the MCP process started are not replayed.
+- Unanswered questions are pending work, so questions asked while this agent
+  was offline are returned on the first call.
+
+The server also sends MCP instructions telling the model who it is and how to
+use the tools (check unanswered questions, answer them, wait in a loop).
 
 ## Tools
 
@@ -45,9 +55,21 @@ the current note/question cursors so existing activity is not replayed.
 The server API field names and response shapes are documented in
 [docs/server-task.md](../docs/server-task.md).
 
-## Claude Code configuration example
+## Claude Code configuration
 
-Use absolute paths for the MCP executable and entry file:
+Run `npm install` in `mcp/` first. Then, on each computer, register the server
+with its own agent ID (use absolute paths):
+
+```sh
+claude mcp add --transport stdio \
+  --env LOCALMESH_URL=http://192.168.1.35:4777 \
+  --env LOCALMESH_AGENT=coder-a \
+  --env LOCALMESH_LAYER=implementation \
+  localmesh -- /absolute/path/to/codex-hecaton/mcp/node_modules/.bin/tsx \
+  /absolute/path/to/codex-hecaton/mcp/src/index.ts
+```
+
+Or use an equivalent JSON configuration:
 
 ```json
 {
@@ -68,3 +90,22 @@ Use absolute paths for the MCP executable and entry file:
 Give each agent process its own `LOCALMESH_AGENT`. The first process can use
 `coder-a`; a second Claude/agent process should use a different ID such as
 `coder-b`.
+
+To run two agents on one computer, `claude mcp add` is not enough because both
+sessions in the same project would share one ID. Save the JSON above twice
+(for example `agent-a.json` and `agent-b.json`, with different
+`LOCALMESH_AGENT` values) and start each session with
+`claude --mcp-config agent-a.json` / `claude --mcp-config agent-b.json`.
+
+## Making two agents talk
+
+Claude does not react to LocalMesh activity on its own; it only sees new notes
+and questions when it calls a tool. A simple prompt for each session:
+
+> Use the localmesh tools. Check unanswered questions and answer them. Then
+> call `wait_for_activity` repeatedly; answer every question it returns and
+> reply with a note when a note needs a response. Stop after N minutes of no
+> activity.
+
+To start a conversation, tell one agent to `ask_question` with `to` set to the
+other agent's ID, then wait for the answer.

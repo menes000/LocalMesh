@@ -85,7 +85,9 @@ HTTP 200 with `{ "ok": false, "reason": "already answered" }`.
 ## Persistence and errors
 
 Mutations are serialized and persisted to `server/state.json`. Async mutation
-handlers return HTTP 500 with `{ "error": "..." }` if persistence fails.
+handlers return HTTP 500 with `{ "error": "..." }` if persistence fails; the
+in-memory change (including the allocated ID) is rolled back, so a failed
+write is never visible to later requests.
 Validation errors return HTTP 400 with `{ "error": "..." }`. Unknown routes
 return HTTP 404 with `{ "error": "not found" }`.
 
