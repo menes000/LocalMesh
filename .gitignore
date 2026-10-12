@@ -1,1 +1,4 @@
-/server/node_modules/
+node_modules/
+server/state.json*
+server/repos/
+.DS_Store

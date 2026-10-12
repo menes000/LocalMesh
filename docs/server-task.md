@@ -1,178 +1,92 @@
-# LocalMesh v1 — Sunucu görevi
+# LocalMesh server API contract
 
-Bu belge, ilk sürümde sunucu tarafını geliştirecek kişinin kapsamını ve istemci
-geliştiricisinin dayanacağı API sözleşmesini tanımlar. Amaç, iki bilgisayardaki
-ajanların aynı yerel ağda, sunucuyu çalıştıran bilgisayar üzerinden mesaj
-gönderip alabilmesidir.
+All API routes are under `/api`. The response field names and shapes below are
+the contract consumed by `/mcp`; keep them exact. IDs are monotonically
+increasing integers shared by notes and questions. `ts` is an ISO 8601 string.
 
-## Mimari ve sınırlar
+## Agents
 
-- Sunucu, geliştiricilerden birinin bilgisayarında çalışır; diğer bilgisayarlar
-  o makinenin LAN IPv4 adresine bağlanır.
-- Bu sürümde internet servisi, bulut hesabı, otomatik ağ keşfi, şifreleme,
-  kullanıcı hesabı ve sunucusuz eşler arası bağlantı kapsam dışıdır.
-- Sunucu, mesajları yönlendirir ve kalıcı olarak saklar. İstemci mesajları
-  HTTP ile gönderir ve alıcıya ait mesajları polling ile alır.
-- Eski `/api/notes` ve `/api/questions` uçları mevcut kodda bulunur. Mesajlaşma
-  bunların anlamını değiştirmeden ayrı `/api/messages` uçları olarak eklenir.
-- İlk sürüm yalnızca güvenilen özel LAN'da kullanılmalıdır. Sunucuyu internete
-  açmak bu sürümün güvenlik kapsamı dışındadır.
+`POST /api/agents/heartbeat`
 
-## Mevcut başlangıç noktası
-
-- `server/src/index.ts`: Express uygulaması `0.0.0.0` üzerinde dinliyor,
-  varsayılan port `4777`; LAN IPv4 adreslerini başlangıçta yazdırıyor.
-- `server/src/routes.ts`: ajan heartbeat, not ve soru/yanıt API'leri var.
-- `server/src/store.ts`: JSON dosyasına atomik yazım ve seri hale getirilmiş
-  mutasyon altyapısı var. Ajan/not/soru dışında mesaj koleksiyonu henüz yok.
-- `README.md` başlangıçta boştu; ürünün ilk sürüm hedefi bu belgeyle
-  açıklanıyor.
-
-## Sunucu geliştiricisinin kapsamı
-
-1. Kalıcı duruma `messages` koleksiyonu ekle. Boş durum, yükleme/doğrulama ve
-   geriye dönük uyumluluk mevcut dosyalarla çalışmalı. Eski `state.json`
-   dosyasında `messages` alanı yoksa boş diziyle açılmalı; mevcut ajan, not,
-   soru ve `nextId` verileri silinmemeli ya da sıfırlanmamalı.
-2. Ortak artan sayısal ID üreticisini kullanarak her mesaja benzersiz ID ver.
-   Mesaj kaydı `id`, `from`, `to`, `content`, `createdAt` alanlarını taşımalı.
-3. Aşağıdaki oluşturma ve okuma endpoint'lerini ekle.
-4. Tüm kalıcı değişiklikleri mevcut `mutate` kuyruğundan geçir; eşzamanlı
-   isteklerde ID çakışması veya yazım kaybı oluşmamalı.
-5. Hatalarda tutarlı JSON hata gövdesi döndür ve API davranışını bu belgeye
-   uygun tut.
-6. Kurulum/çalıştırma ve API örneklerini README'de tut. İstemci geliştiricisi
-   endpoint ya da alan adlarını tahmin etmek zorunda kalmamalı.
-
-## API sözleşmesi
-
-Tüm uçlar sunucu köküne göre `/api` altındadır. JSON gövdeleri UTF-8'dir.
-
-### Mesaj gönder
-
-`POST /api/messages`
-
-İstek:
+Request:
 
 ```json
-{
-  "from": "laptop-a",
-  "to": "laptop-b",
-  "content": "Merhaba, bu bir deneme mesajı."
-}
+{ "agent": "coder-a", "layer": "implementation" }
 ```
 
-Başarı: `201 Created`
+`layer` is optional and defaults to `""`. Success response:
 
 ```json
-{
-  "id": 12,
-  "from": "laptop-a",
-  "to": "laptop-b",
-  "content": "Merhaba, bu bir deneme mesajı.",
-  "createdAt": "2026-10-12T12:00:00.000Z"
-}
+{ "ok": true }
 ```
 
-Kurallar:
-
-- `from`, `to` ve `content` boş olmayan string olmalı; baştaki/sondaki
-  boşluklar doğrulama sırasında yok sayılmalı.
-- `content` en fazla 64 KiB UTF-8 olmalı. Daha büyük gövde `413` ile
-  reddedilmeli; bozuk/eksik alanlar `400` ile reddedilmeli.
-- `from` ve `to` ajan kimlikleridir. V1'de mesaj göndermek için alıcının
-  çevrimiçi olması gerekmez; çevrimdışı alıcı mesajı daha sonra alabilmelidir.
-- Yeni mesaj için sunucu `id` ve UTC ISO-8601 `createdAt` üretir; istemcinin
-  gönderdiği bu alanlar dikkate alınmaz.
-- Kabul edilen mesaj JSON dosyasına yazılmadan başarı yanıtı verilmemeli.
-
-### Alıcıya gelen mesajları oku
-
-`GET /api/messages?agent=laptop-b&since=0&limit=100`
-
-- `agent` zorunludur; boşsa veya verilmemişse `400`.
-- `since` isteğe bağlı, varsayılanı `0` olan sıfır veya pozitif güvenli
-  tamsayıdır. Yalnızca `id > since` mesajlar döner.
-- `limit` isteğe bağlıdır; varsayılan `100`, izin verilen aralık `1–500`.
-- Yalnızca `to` alanı `agent` ile eşleşen mesajlar döner; sonuçlar `id`
-  artan sıradadır.
-- Başarı yanıtı bir nesnedir:
+`GET /api/agents` returns an array with exactly these fields per agent:
 
 ```json
-{
-  "messages": [
-    {
-      "id": 12,
-      "from": "laptop-a",
-      "to": "laptop-b",
-      "content": "Merhaba, bu bir deneme mesajı.",
-      "createdAt": "2026-10-12T12:00:00.000Z"
-    }
-  ],
-  "nextSince": 12
-}
+[{ "agent": "coder-a", "layer": "implementation", "lastSeen": "2026-10-12T10:00:00.000Z", "online": true }]
 ```
 
-- Sonuç boşsa `messages: []` döner ve `nextSince`, istekteki `since`
-  değeridir (yoksa `0`). Böylece istemci cursor değerini yalnızca gerçekten
-  aldığı son mesajın ID'sine ilerletir.
-- İstemci mesajları aldığı zaman son mesaj ID'sini saklar ve sonraki istekte
-  `since` olarak gönderir. Mesaj okuma mesajı silmez; istemcinin yeniden
-  bağlanması veya sunucunun yeniden başlaması mesajı kaybettirmez.
-- Geçersiz `since`, `limit` ya da boş `agent` `400` döner.
+`online` is true when `lastSeen` is less than 30 seconds ago.
 
-### Ortak hata biçimi
+## Notes
+
+`POST /api/notes`
+
+Request:
 
 ```json
-{ "error": "açıklayıcı hata mesajı" }
+{ "agent": "coder-a", "text": "The parser is ready.", "tags": ["status"] }
 ```
 
-HTTP durum kodları: `400` geçersiz istek, `404` bulunmayan rota, `413` istek
-gövdesi/mesaj sınırını aşıyor. Mevcut global JSON gövde sınırı 1 MiB'dir;
-mesaj içeriği sınırı ayrıca 64 KiB olarak uygulanmalıdır.
+`tags` is optional. Success response is exactly `{ "id": 1, "ts": "..." }`.
 
-## İstemci geliştiricisiyle arayüz paylaşımı
+`GET /api/notes?since=<id>&exclude=<agent>` returns an array of
+`{ "id", "ts", "agent", "text", "tags" }`. `since` is exclusive; `exclude`
+omits notes written by that agent. Both query parameters are optional.
 
-İstemci geliştiricisi API'yi yukarıdaki şekilde kullanır:
+## Questions
 
-1. `POST /api/agents/heartbeat` ile `{ "id": "laptop-b", "name": "..." }`
-   gönderip ajan kimliğini kaydeder/yaşatır.
-2. Mesaj yazmak için `POST /api/messages` çağırır.
-3. Gelen mesajlar için örneğin 1–2 saniyede bir
-   `GET /api/messages?agent=laptop-b&since=<son_id>` çağırır.
-4. Mesajları aldıktan sonra son `id` değerini yerelde saklar ve sonraki
-   sorguda kullanır. Sunucu mesajı tüketilmiş olarak işaretlemez.
+`POST /api/questions`
 
-Sunucu adresi `http://<sunucu-lan-ip>:4777` biçimindedir. Sunucu geliştiricisi
-endpoint'leri veya alanları değiştirmek isterse önce bu belgeyi güncelleyip
-istemci geliştiricisine haber vermelidir.
+Request:
 
-## Tamamlanma ölçütleri
+```json
+{ "from": "coder-a", "to": "coder-b", "question": "Can you review this?" }
+```
 
-- Eski biçimde bir `state.json` varsa mevcut veriler korunarak açılır ve yeni
-  mesajlar saklanabilir.
-- İki farklı ajan heartbeat gönderebilir; bir ajan diğerine mesaj bırakabilir.
-- İkinci ajan kendi `agent` değeriyle polling yapınca mesajı artan ID sırasıyla
-  görür; başka alıcıların mesajları görünmez.
-- Boş mesaj/kimlik, hatalı cursor ve limit gibi girdiler uygun `400` yanıtı
-  verir; çok büyük mesaj reddedilir.
-- Sunucu yeniden başlatıldığında mesaj kayıtları ve sonraki ID üretimi devam
-  eder.
-- README, sunucuyu başlatmayı, LAN URL'sini bulmayı ve endpoint örneklerini
-  açıklar.
+`to` is optional. Success response is exactly `{ "id": 2, "ts": "..." }`.
 
-## Manuel uçtan uca kontrol
+`GET /api/questions?for=<agent>&unanswered=true` returns an array of
+`{ "id", "ts", "from", "to?", "question" }`. It includes questions addressed
+to that agent or with no `to`, excludes questions from that same agent, and
+when `unanswered=true` excludes answered questions.
 
-1. Sunucu bilgisayarında `cd server && npm install && npm run dev` çalıştır.
-2. Konsolda yazan LAN IP'sini diğer bilgisayardan kullan; iki bilgisayarın
-   aynı yerel ağda olduğundan emin ol.
-3. İki ajan ID'si için heartbeat gönder.
-4. Birinci ajandan ikinciye mesaj POST et; ikinci ajan için GET isteğiyle
-   mesajı gör.
-5. GET isteğini aynı `since` ile tekrarla: mesaj hâlâ görünmeli. `since`
-   değerini mesaj ID'sine ilerletince liste boş olmalı.
-6. Sunucuyu yeniden başlatıp aynı alıcı sorgusuyla mesajın hâlâ durduğunu
-   doğrula.
+`GET /api/questions/:id` returns
+`{ "id", "ts", "from", "to?", "question", "answer?", "answeredBy?", "answeredAt?" }`.
+It returns HTTP 404 with `{ "error": "question not found" }` when the ID is
+missing.
 
-Bu manuel akış kabul kontrolüdür; ilk görevin kapsamı için ayrıca bir test
-altyapısı kurmak şart değildir.
+`POST /api/questions/:id/answer`
+
+Request:
+
+```json
+{ "from": "coder-b", "answer": "Reviewed; looks good." }
+```
+
+The first answer returns `{ "ok": true }`. If already answered, it returns
+HTTP 200 with `{ "ok": false, "reason": "already answered" }`.
+
+## State
+
+`GET /api/state` returns exactly
+`{ "agents": [...], "notes": [...], "questions": [...], "claims": [] }`.
+
+## Persistence and errors
+
+Mutations are serialized and persisted to `server/state.json`. Async mutation
+handlers return HTTP 500 with `{ "error": "..." }` if persistence fails.
+Validation errors return HTTP 400 with `{ "error": "..." }`. Unknown routes
+return HTTP 404 with `{ "error": "not found" }`.
+
+There is no `/api/messages` endpoint in this contract.
