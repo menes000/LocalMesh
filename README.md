@@ -32,3 +32,9 @@ The exact request and response contract is documented in
 - `GET /api/state`
 
 `/health` is a server availability check and returns `{ "ok": true }`.
+
+## MCP server
+
+The stdio MCP server and its setup instructions are in [mcp/](mcp/README.md).
+It exposes the API as agent-scoped tools, reads identity from environment
+configuration, and refreshes the agent heartbeat while running.
