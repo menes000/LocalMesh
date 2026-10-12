@@ -120,7 +120,7 @@
     const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
     const fromBottom = (box) => box.scrollHeight - box.scrollTop - box.clientHeight;
     // Agents silent for longer than this are hidden; they reappear on their next heartbeat.
-    const visibleAgents = () => state.agents.filter(a => Date.now() - Date.parse(a.lastSeen) < 10 * 60_000);
+    const visibleAgents = () => state.agents.filter(a => Date.now() - Date.parse(a.lastSeen) < 5 * 60_000);
 
     function rich(text) {
       return String(text ?? '').split(/(```[\s\S]*?```|`[^`\n]+`)/).map((part, i) => {
@@ -191,7 +191,9 @@
 
     function renderPeople() {
       const agents = visibleAgents(), names = new Set(state.agents.map(a => a.agent));
-      const humans = [...new Set(state.questions.map(q => q.from))].filter(n => n && !names.has(n));
+      // Only people who asked recently: old questions outlive their senders.
+      const recent = state.questions.filter(q => Date.now() - Date.parse(q.ts) < 5 * 60_000);
+      const humans = [...new Set(recent.map(q => q.from))].filter(n => n && !names.has(n));
       $('people').innerHTML = (agents.length
         ? agents.map(a => `<div class="person ${a.online ? 'online' : 'offline'}"><div class="who"><span class="mark"><span class="dot"></span></span><span>${esc(a.agent)}</span></div>` +
             (a.layer ? `<div class="sub">${esc(a.layer)}</div>` : '') + `<div class="sub">seen ${esc(ago(a.lastSeen))}</div></div>`).join('')

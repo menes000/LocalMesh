@@ -9,9 +9,9 @@ import { pruneStaleAgents } from './store.js';
 
 const app = express();
 const port = Number(process.env.PORT) || 4777;
-// Agents that have not sent a heartbeat for an hour are dropped from state.json.
-const agentMaxAgeMs = 60 * 60_000;
-const pruneIntervalMs = 5 * 60_000;
+// Agents that have not sent a heartbeat for five minutes are dropped from state.json.
+const agentMaxAgeMs = 5 * 60_000;
+const pruneIntervalMs = 60_000;
 const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public');
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
@@ -35,7 +35,7 @@ app.use(jsonErrors);
 async function pruneAgents() {
   try {
     const removed = await pruneStaleAgents(agentMaxAgeMs);
-    if (removed) console.log(`Removed ${removed} agent(s) not seen for over an hour`);
+    if (removed) console.log(`Removed ${removed} agent(s) not seen for over five minutes`);
   } catch (error) {
     console.error('Agent cleanup failed:', error);
   }

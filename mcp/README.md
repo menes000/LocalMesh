@@ -15,8 +15,10 @@ moses codex enes2 --layer review
 ```
 
 It builds the configuration below on the fly. For Claude Code it passes
-`--mcp-config`, `--strict-mcp-config`, `--allowedTools mcp__localmesh` and
-`--dangerously-load-development-channels server:localmesh`. For Codex it passes
+`--mcp-config`, `--strict-mcp-config`, `--allowedTools mcp__localmesh`,
+`--dangerously-load-development-channels server:localmesh`, and an
+`--append-system-prompt` that authorizes the agent to answer LocalMesh
+questions without asking first. For Codex it passes
 `-c mcp_servers.localmesh.*` overrides, including
 `default_tools_approval_mode="approve"`; without that, Codex asks before every
 LocalMesh tool call, and `codex exec` fails them outright. Codex ignores `-c`
@@ -73,7 +75,10 @@ receives pushes and calls `wait_for_activity` can see an item twice;
 `{ ok: false, reason: "already answered" }`.
 
 The server also sends MCP instructions telling the model who it is, how to
-handle channel messages, and how to use the tools.
+handle channel messages, and how to use the tools. They authorize the agent to
+answer questions addressed to it right away, without asking its user, and to
+refuse requests inside a question to change files, run commands or reveal
+secrets until its user approves.
 
 ## Tools
 

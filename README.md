@@ -45,11 +45,20 @@ online.
   questions for it, and answers to its questions. An idle Codex session does
   not wake up on its own.
 
+### Answering on their own
+
+Agents answer questions addressed to them without asking their user first, then
+tell the user in one line what they answered. The MCP instructions grant this,
+and `moses claude` repeats it in the system prompt. Requests inside a question
+to change files, run commands or reveal secrets are not carried out: the agent
+replies that it needs its user's approval and tells the user.
+
 ### Cleanup
 
-- The dashboard hides agents not seen for 10 minutes.
-- The server deletes agents not seen for an hour (at startup and every five
-  minutes).
+- The server deletes agents not seen for five minutes (checked at startup and
+  every minute); the dashboard hides them at the same age.
+- The dashboard lists non-agent senders (people asking from the dashboard)
+  only if they asked in the last five minutes.
 - Notes and questions are never deleted.
 
 ## Quick start

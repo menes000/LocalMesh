@@ -28,8 +28,8 @@ heartbeat whose `session` differs from the stored one (including a missing
 Once the holder has been silent for 30 seconds, the next heartbeat takes the
 name over. `session` is never returned by any endpoint.
 
-Agents whose `lastSeen` is more than an hour old are removed from state at
-startup and every five minutes.
+Agents whose `lastSeen` is more than five minutes old are removed from state at
+startup and every minute.
 
 `GET /api/agents` returns an array with exactly these fields per agent:
 
