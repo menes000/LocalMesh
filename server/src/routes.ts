@@ -76,7 +76,7 @@ router.get('/notes', (req, res) => {
   const sinceValue = req.query.since;
   const since = sinceValue === undefined ? 0 : parseCursor(String(sinceValue));
   if (since === undefined) return bad(res, 'since must be a non-negative integer');
-  const exclude = typeof req.query.exclude === 'string' ? req.query.exclude : undefined;
+  const exclude = typeof req.query.exclude === 'string' ? req.query.exclude.trim() : undefined;
   return res.json(noteList().filter(note => note.id > since && note.agent !== exclude));
 });
 

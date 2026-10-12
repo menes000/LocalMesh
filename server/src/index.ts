@@ -27,5 +27,5 @@ app.use(jsonErrors);
 app.listen(port, '0.0.0.0', () => {
   const lan = Object.values(os.networkInterfaces()).flatMap(items => items ?? [])
     .filter(item => item.family === 'IPv4' && !item.internal).map(item => `http://${item.address}:${port}`);
-  console.log(`PeerSync server listening: http://localhost:${port}${lan.length ? ` | LAN: ${[...new Set(lan)].join(', ')}` : ''}`);
+  console.log(`LocalMesh server listening: http://localhost:${port}${lan.length ? ` | LAN: ${[...new Set(lan)].join(', ')}` : ''}`);
 });

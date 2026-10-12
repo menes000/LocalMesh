@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -30,7 +30,11 @@ function validState(value: unknown): value is State {
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' ? value as Record<string, unknown> : {};
 
+const validId = (id: number) => Number.isSafeInteger(id) && id > 0;
+
 function migrateState(value: State): State {
+  // Entries without a usable identity are dropped: a NaN id would poison
+  // nextId, and an empty agent name cannot be addressed.
   const agents = value.agents.map(raw => {
     const item = record(raw);
     return {
@@ -38,7 +42,7 @@ function migrateState(value: State): State {
       layer: typeof item.layer === 'string' ? item.layer : '',
       lastSeen: typeof item.lastSeen === 'string' ? item.lastSeen : new Date(0).toISOString(),
     };
-  });
+  }).filter(item => item.agent.trim().length > 0);
   const notes = value.notes.map(raw => {
     const item = record(raw);
     const tags = Array.isArray(item.tags) && item.tags.every(tag => typeof tag === 'string')
@@ -50,7 +54,7 @@ function migrateState(value: State): State {
       text: typeof item.text === 'string' ? item.text : String(item.content ?? ''),
       tags,
     };
-  });
+  }).filter(item => validId(item.id));
   const questions = value.questions.map(raw => {
     const item = record(raw);
     return {
@@ -63,7 +67,7 @@ function migrateState(value: State): State {
       ...(typeof item.answeredBy === 'string' ? { answeredBy: item.answeredBy } : {}),
       ...(typeof item.answeredAt === 'string' ? { answeredAt: item.answeredAt } : {}),
     };
-  });
+  }).filter(item => validId(item.id));
   const highestId = Math.max(0, ...notes.map(item => item.id), ...questions.map(item => item.id));
   return { agents, notes, questions, nextId: Math.max(value.nextId, highestId + 1) };
 }
@@ -77,7 +81,7 @@ async function load(): Promise<State> {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return emptyState();
     const corruptPath = `${statePath}.corrupt-${Date.now()}`;
     try { await rename(statePath, corruptPath); } catch { /* file may be unavailable */ }
-    console.error(`\n*** WARNING: PeerSync state is malformed and was moved to ${corruptPath}; starting with empty state. ***\n`, error);
+    console.error(`\n*** WARNING: LocalMesh state is malformed and was moved to ${corruptPath}; starting with empty state. ***\n`, error);
     return emptyState();
   }
 }
@@ -85,12 +89,22 @@ async function load(): Promise<State> {
 export const state = await load();
 let writeChain: Promise<void> = Promise.resolve();
 
-/** Queue state mutations and persist each completed mutation atomically. */
+/**
+ * Queue state mutations and persist each completed mutation atomically.
+ * If the change or the write fails, the in-memory state is rolled back so it
+ * never holds data the caller was told was not saved.
+ */
 export function mutate<T>(change: () => T): Promise<T> {
   const operation = writeChain.then(async () => {
-    const result = change();
-    await persist();
-    return result;
+    const snapshot = structuredClone(state);
+    try {
+      const result = change();
+      await persist();
+      return result;
+    } catch (error) {
+      Object.assign(state, snapshot);
+      throw error;
+    }
   });
   writeChain = operation.then(() => undefined, () => undefined);
   return operation;
@@ -99,8 +113,13 @@ export function mutate<T>(change: () => T): Promise<T> {
 export async function persist(): Promise<void> {
   await mkdir(path.dirname(statePath), { recursive: true });
   const temp = `${statePath}.${process.pid}.${Date.now()}.tmp`;
-  await writeFile(temp, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
-  await rename(temp, statePath);
+  try {
+    await writeFile(temp, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+    await rename(temp, statePath);
+  } catch (error) {
+    await rm(temp, { force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 export function allocateId(): number { return state.nextId++; }
