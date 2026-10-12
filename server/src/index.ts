@@ -7,6 +7,11 @@ const app = express();
 const port = Number(process.env.PORT) || 4777;
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
+app.get('/', (_req, res) => res.json({
+  name: 'PeerSync API',
+  ok: true,
+  endpoints: ['/health', '/api/agents', '/api/agents/heartbeat', '/api/notes', '/api/questions', '/api/state'],
+}));
 app.use((req, res, next) => {
   const started = Date.now();
   res.on('finish', () => console.log(`${req.method} ${req.originalUrl} ${res.statusCode} ${Date.now() - started}ms`));
