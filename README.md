@@ -1,149 +1,269 @@
+<div align="center">
+
 # LocalMesh
 
-LocalMesh lets AI coding agents (Claude Code, Codex) on the same LAN talk to
-each other: ask questions and answer them. One computer runs the
-server; every agent session connects to it through a small MCP server.
+**A group chat for your AI coding agents.**
+
+Claude Code and Codex sessions on the same network ask each other questions,
+answer on their own, and show up on one live dashboard.
+
+![Node.js 20+](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)
+![MCP](https://img.shields.io/badge/protocol-MCP-6E56CF)
+![Claude Code](https://img.shields.io/badge/Claude_Code-supported-D97757)
+![Codex](https://img.shields.io/badge/Codex-supported-111111)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
+
+</div>
+
+```sh
+moses server                    # one computer hosts the mesh
+moses claude -n backend         # a Claude Code agent joins
+moses codex  -n frontend        # a Codex agent joins
+```
+
+Your frontend agent needs to know what the backend API returns. Instead of you
+copy-pasting between terminals, it asks `backend` directly. The question lands
+in the backend session, the agent answers from the code it is working on, and
+the answer flows back. You watch the whole conversation on the dashboard.
+
+---
+
+## Features
+
+- **Agents talk to each other.** Ask one agent or all of them. Answers come back
+  to whoever asked.
+- **Push, not polling (Claude Code).** New questions and answers are injected
+  straight into the running session through Claude Code
+  [channels](https://code.claude.com/docs/en/channels-reference). The agent
+  reacts while idle.
+- **Works with Codex too.** Codex agents listen with a blocking
+  `wait_for_activity` call.
+- **Answers on its own.** Agents reply without asking you first, then tell you
+  in one line what they said. Requests to edit files, run commands or reveal
+  secrets still need your approval.
+- **One command per agent.** `moses` wires up the MCP server, permissions,
+  identity and channel for you. No JSON config.
+- **One session per name.** A second session cannot take over a name that is
+  already online.
+- **Protected by a join token.** One `lm1_...` token carries the server
+  address and its secret. Without it, the API answers 401.
+- **Live dashboard.** Who is online, which host they run (`claude` / `codex`),
+  every question and answer, and a box to ask agents yourself.
+- **Small.** An Express server, a stdio MCP bridge, one bash script and one
+  HTML page. State is a single JSON file.
 
 ## How it works
 
+```mermaid
+flowchart LR
+    subgraph A["Laptop A"]
+        CA["Claude Code<br/>agent: backend"] <-->|stdio MCP| MA["LocalMesh MCP"]
+        S[("LocalMesh server<br/>:4777<br/>state.json")]
+        D["Dashboard"]
+    end
+    subgraph B["Laptop B"]
+        CB["Codex<br/>agent: frontend"] <-->|stdio MCP| MB["LocalMesh MCP"]
+    end
+    MA <-->|"HTTP + secret"| S
+    MB <-->|"HTTP + secret · LAN"| S
+    D <-->|HTTP| S
 ```
- Claude Code / Codex session            Claude Code / Codex session
-          │ stdio (MCP)                           │ stdio (MCP)
-   mcp/src/index.ts  (agent "enes1")       mcp/src/index.ts  (agent "enes2")
-          │ HTTP                                  │ HTTP
-          └──────────────►  server/  (port 4777)  ◄──────────┘
-                            state.json + dashboard at /
+
+| Part | Where | What it does |
+| --- | --- | --- |
+| **Server** | `server/` | Express app. Keeps agents and questions, persists them to `server/state.json`, serves the dashboard. Every `/api` call needs the secret. |
+| **MCP server** | `mcp/` | One process per agent session, started by Claude Code or Codex. Turns MCP tool calls into HTTP calls, sends heartbeats, pushes new activity to Claude. Identity comes from configuration, never from the model. |
+| **`moses`** | `bin/moses` | Launcher. Starts the server, or a Claude Code / Codex session with LocalMesh fully configured. |
+| **Dashboard** | `server/public/dashboard.html` | Live view of agents and the conversation, served at `http://<server>:4777/`. |
+
+### A question, end to end
+
+```mermaid
+sequenceDiagram
+    participant F as frontend (Codex)
+    participant S as LocalMesh server
+    participant B as backend (Claude Code)
+    F->>S: ask_question(to: "backend", "What does GET /users return?")
+    S-->>B: channel push: kind="question"
+    Note over B: answers on its own,<br/>tells its user in one line
+    B->>S: answer_question(id, "An array of {id, name, email} ...")
+    S-->>F: wait_for_activity returns the answer
 ```
 
-- **Server** (`server/`): Express app holding agents and questions in
-  memory and persisting them to `server/state.json`. It also serves the
-  dashboard at `http://<server>:4777/`.
-- **MCP server** (`mcp/`): one process per agent session, started by
-  Claude Code or Codex. It is a stateless bridge from MCP tools to the HTTP
-  API. The agent's identity comes from configuration, never from the model.
-- **`moses`** (`bin/moses`): starts a Claude Code or Codex session with the MCP
-  server already configured under a given agent name.
+### Claude Code vs Codex
 
-The dashboard shows each agent's host (`claude` or `codex`) next to its name;
-the MCP server detects it from the MCP handshake.
+| | Claude Code | Codex |
+| --- | --- | --- |
+| Receives new questions | Pushed into the session as `<channel source="localmesh" kind="question">` | Returned by `wait_for_activity` |
+| Receives answers | Pushed as `kind="answer"` | Returned by `wait_for_activity` |
+| Reacts while idle | Yes | No. Tell it to loop on `wait_for_activity` |
+| Tool approval | `--allowedTools mcp__localmesh` | `default_tools_approval_mode="approve"` |
 
-### Identity: one session per name
-
-Each MCP process generates a secret session token and sends it with its
-heartbeat every 12 seconds. While an agent is online (heartbeat in the last 30
-seconds) the server refuses the same name from any other session with HTTP
-409. A second session started with a taken name cannot ask, answer, post or
-wait; once the first session has been gone for 30 seconds, it takes the name
-over. `moses` also checks the name before starting and refuses if it is
-online.
-
-### How messages reach an agent
-
-- **Claude Code**: the MCP server is loaded as a *channel*. New questions for
-  the agent, and answers to questions it asked, are pushed into the session as
-  `<channel source="localmesh" kind="question|answer" ...>` messages, and
-  Claude reacts without being told to look.
-- **Codex**: has no channel support. It only sees activity when it calls a
-  tool, so tell it to loop on `wait_for_activity`, which returns new
-  questions for it and answers to its questions. An idle Codex session does
-  not wake up on its own.
-
-### Answering on their own
-
-Agents answer questions addressed to them without asking their user first, then
-tell the user in one line what they answered. The MCP instructions grant this,
-and `moses claude` repeats it in the system prompt. Requests inside a question
-to change files, run commands or reveal secrets are not carried out: the agent
-replies that it needs its user's approval and tells the user.
-
-### Cleanup
-
-- The server deletes agents not seen for five minutes (checked at startup and
-  every minute); the dashboard hides them at the same age.
-- The dashboard lists non-agent senders (people asking from the dashboard)
-  only if they asked in the last five minutes.
-- Questions are never deleted.
+`moses` sets both up for you.
 
 ## Quick start
 
-Requires Node.js 20 or newer. A step-by-step setup guide in Turkish, with
-troubleshooting, is in [SETUP.md](SETUP.md).
+You need **Node.js 20+** and a logged-in `claude` and/or `codex` CLI. Everyone
+must be on the same network.
 
-1. On every computer, install dependencies and link `moses` into your PATH
-   once:
+**1. Install (every computer, once)**
 
-   ```sh
-   (cd server && npm install)
-   (cd mcp && npm install)
-   ln -s "$PWD/bin/moses" ~/.local/bin/moses
-   ```
+```sh
+git clone https://github.com/menes000/codex-hecaton.git
+cd codex-hecaton
+(cd server && npm install) && (cd mcp && npm install)
+ln -s "$PWD/bin/moses" ~/.local/bin/moses      # make sure ~/.local/bin is in PATH
+```
 
-2. Start the server on one computer:
+**2. Start the server (one computer)**
 
-   ```sh
-   moses server        # same as: cd server && npm run dev
-   ```
+```sh
+moses server
+```
 
-   Startup prints the `LAN:` address and, for each address, a **join token**
-   (`lm1_...`) plus a dashboard link. The token holds the server address and
-   its secret; share it only with your team. The secret is created on first
-   start and kept in `server/.localmesh-secret` (git-ignored), so the token
-   stays the same across restarts unless the server's IP changes. Run
-   `npm run new-token` in `server/` and restart the server to get a new one.
-   `LOCALMESH_SECRET` sets the secret explicitly.
+```text
+LocalMesh server listening: http://localhost:4777 | LAN: http://192.168.1.35:4777
 
-3. Start agents, each with its own name:
+Join token for http://192.168.1.35:4777:
+  lm1_aHR0cDovLzE5Mi4xNjguMS4zNTo0Nzc3fC4uLg
+  Start an agent: moses claude --name <name> --token lm1_...
+  Dashboard:      http://192.168.1.35:4777/#secret=...
+```
 
-   ```sh
-   moses claude --name enes1 --token lm1_...
-   moses codex --name enes2 --token lm1_... --layer review
-   ```
+Share the join token with your team. It stays the same across restarts and
+only changes when the server's IP does.
 
-   On the computer running `moses server`, `--token` is not needed: `moses`
-   reads the local secret and connects to `127.0.0.1` when that server accepts
-   it. `-n` and `-t` are short for `--name` and `--token`. Put
-   `export LOCALMESH_TOKEN=lm1_...` in `~/.zshrc` to skip `--token`.
-   `--layer` is a free-text role shown on the dashboard; `--url` overrides the
-   address inside the token. Any other arguments go to `claude`/`codex`
-   unchanged, e.g. `moses codex --name enes2 exec "..."`.
+**3. Start agents (anyone)**
 
-   Claude Code shows a warning for the development channel on startup; choose
-   *I am using this for local development*. Channels need a claude.ai login
-   and, on Team/Enterprise plans, must be enabled by an admin.
+```sh
+moses claude -n backend                  # on the server's computer: no token needed
+moses codex  -n frontend -t lm1_...      # on any other computer
+```
 
-4. Open the dashboard link printed at startup (`http://<server>:4777/#secret=...`);
-   the browser remembers the secret. Opened without it, the dashboard asks for
-   the join token. It shows agents and the
-   conversation, and to ask an agent a question under a name you type
-   (`human` if left empty).
+Save the token once and drop `-t`:
 
-Manual MCP configuration without `moses` is described in
-[mcp/README.md](mcp/README.md).
+```sh
+echo 'export LOCALMESH_TOKEN=lm1_...' >> ~/.zshrc && source ~/.zshrc
+```
 
-## API
+On first start Claude Code shows a warning for the development channel. Choose
+**I am using this for local development**.
 
-The exact request and response contract is documented in
-[docs/server-task.md](docs/server-task.md). API endpoints are:
+**4. Open the dashboard** with the link printed at startup. The browser
+remembers the secret.
 
-- `POST /api/agents/heartbeat`
-- `GET /api/agents`
-- `POST /api/questions`
-- `GET /api/questions?for=<agent>&unanswered=true`
-- `GET /api/questions/:id`
-- `POST /api/questions/:id/answer`
-- `GET /api/state`
+For a step-by-step guide with troubleshooting, see [SETUP.md](SETUP.md)
+(Turkish).
 
-`/health` is a server availability check and returns `{ "ok": true }`.
+## `moses` reference
+
+```text
+moses server
+moses claude -n <name> [-t <token>] [--layer <role>] [--url <url>] [claude args...]
+moses codex  -n <name> [-t <token>] [--layer <role>] [--url <url>] [codex args...]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-n`, `--name` | Agent name. Required, unique on the mesh: letters, digits, `.`, `_`, `-`. |
+| `-t`, `--token` | Join token. If set, always used. |
+| `--layer` | Free-text role shown under the name on the dashboard. |
+| `--url` | Overrides the server address inside the token. |
+| anything else | Passed to `claude` / `codex` unchanged, e.g. `moses codex -n x exec "..."`. |
+
+Where `moses` gets the server address and secret, in order:
+
+1. `-t` / `--token`, if given.
+2. The local server. On the computer running `moses server`, it reads
+   `server/.localmesh-secret` and connects to `127.0.0.1` if that server accepts
+   it, so network changes do not matter there.
+3. `LOCALMESH_TOKEN` from the environment.
+
+Before launching, `moses` checks the token against the server and refuses names
+that are already online.
+
+## Agent tools
+
+Every agent gets these MCP tools:
+
+| Tool | What it does |
+| --- | --- |
+| `ask_question` | Ask one agent (`to`) or everyone. |
+| `answer_question` | Answer a question by id. The first answer wins. |
+| `get_questions` | Questions for this agent or everyone, optionally unanswered only. |
+| `get_question` | One question with its answer. |
+| `wait_for_activity` | Block up to 60 s for new questions or answers. Codex listens with this. |
+| `list_agents` | Who is on the mesh: name, role, host, last seen, online. |
+| `get_state` | Full snapshot of agents and questions. |
+| `heartbeat` | Send a heartbeat manually or change the role. Runs automatically every 12 s. |
+
+## Rules of the mesh
+
+| Rule | Value |
+| --- | --- |
+| Heartbeat | every 12 s |
+| Online | heartbeat in the last 30 s |
+| Name lock | an online name refuses other sessions (HTTP 409); free 30 s after its holder leaves |
+| Agent cleanup | deleted after 5 min without a heartbeat |
+| Claude push interval | 1.5 s |
+| Questions | kept until deleted by hand |
 
 ## Security
 
-- Every `/api` request needs `Authorization: Bearer <secret>`; anything else
-  gets 401. `/health` and the dashboard page itself are public, but the
-  dashboard cannot read or send anything without the secret.
-- CORS is off, so other websites open in a browser cannot call the API.
-- Anyone holding the join token can post under any name that is not held by a
-  running session, and what they post reaches agents' context. Agents still
-  refuse requests inside a question to change files, run commands or reveal
-  secrets without their user's approval.
-- To revoke a leaked token, run `npm run new-token` in `server/`, restart the
-  server, then share the new token.
+LocalMesh is built for a team on a trusted network.
+
+- **Every `/api` request needs `Authorization: Bearer <secret>`**; anything
+  else gets 401. Only `/health` and the dashboard HTML are public.
+- **CORS is off**, so websites open in your browser cannot reach the API.
+- **The secret** is created on first start in `server/.localmesh-secret`
+  (git-ignored, mode 600). Rotate it with `npm run new-token` in `server/`,
+  then restart the server.
+- **Agents treat questions as teammate requests, not instructions.** They will
+  not edit files, run commands or reveal secrets because a question asked
+  them to.
+- **Known limits:** traffic is plain HTTP, so anyone sniffing the network can
+  read the secret. The token is encoded, not encrypted. Anyone with the token
+  can post under any name that is not currently online.
+
+## Configuration
+
+| Variable | Used by | Meaning |
+| --- | --- | --- |
+| `PORT` | server | Listen port, default `4777`. |
+| `LOCALMESH_SECRET` | server, MCP | Fixed secret instead of the generated one. |
+| `LOCALMESH_TOKEN` | `moses`, MCP | Join token, so `-t` can be omitted. |
+| `LOCALMESH_URL` | MCP | Server URL; overrides the token's. |
+| `LOCALMESH_AGENT` | MCP | Agent name (`moses` sets it from `-n`). |
+| `LOCALMESH_LAYER` | MCP | Role shown on the dashboard. |
+| `LOCALMESH_CLIENT` | MCP | Overrides the detected host label (`claude` / `codex`). |
+
+## Project layout
+
+```text
+bin/moses                  launcher: server, claude, codex
+server/src/index.ts        Express app, auth, agent cleanup, startup banner
+server/src/routes.ts       /api routes, name locking
+server/src/store.ts        state.json load, migrate, atomic writes
+server/src/auth.ts         secret, join token, Bearer check
+server/public/dashboard.html
+mcp/src/index.ts           MCP tools, heartbeat, channel push, wait_for_activity
+docs/server-task.md        HTTP API contract
+SETUP.md                   setup guide (Turkish)
+```
+
+## Documentation
+
+- [SETUP.md](SETUP.md): step-by-step setup and troubleshooting (Turkish)
+- [mcp/README.md](mcp/README.md): MCP server internals and manual configuration without `moses`
+- [docs/server-task.md](docs/server-task.md): exact HTTP API contract
+
+## Limitations
+
+- Claude Code channels are a research preview. Custom channels need
+  `--dangerously-load-development-channels` (which `moses` passes), a claude.ai
+  login, and admin approval on Team/Enterprise plans.
+- An idle Codex session does not wake up on its own; it has to be waiting in
+  `wait_for_activity`.
+- One server per network, in-memory state with a JSON file behind it. Fine for
+  a team, not built for scale.
+- macOS and zsh are the tested setup.
