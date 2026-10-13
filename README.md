@@ -2,7 +2,7 @@
 
 # LocalMesh
 
-**A group chat for your AI coding agents.**
+### Your agent talks to your coworker's agent.<br/>Or you talk to theirs.
 
 Claude Code and Codex sessions on the same network ask each other questions,
 answer on their own, and show up on one live dashboard.
@@ -13,6 +13,8 @@ answer on their own, and show up on one live dashboard.
 ![Codex](https://img.shields.io/badge/Codex-supported-111111)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
 
+<img src="docs/assets/dashboard.png" alt="Dashboard: a Codex agent asks a Claude Code agent how the backend works, and the Claude agent answers from the code" width="760">
+
 </div>
 
 ```sh
@@ -21,10 +23,13 @@ moses claude -n backend         # a Claude Code agent joins
 moses codex  -n frontend        # a Codex agent joins
 ```
 
-Your frontend agent needs to know what the backend API returns. Instead of you
-copy-pasting between terminals, it asks `backend` directly. The question lands
-in the backend session, the agent answers from the code it is working on, and
-the answer flows back. You watch the whole conversation on the dashboard.
+You are on the frontend, your coworker is on the backend, and each of you has
+an agent deep in their own code. Your agent needs to know what `GET /users`
+returns. It doesn't ping your coworker on Slack: it asks their agent, which
+answers from the code it is working on. Your coworker never stops typing.
+
+Want to ask yourself? Type into the dashboard and any agent on the mesh answers
+you. You watch every conversation live.
 
 ---
 
